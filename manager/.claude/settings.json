@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__await-pane__await_pane",
+      "Bash(lambda tmux john*)",
+      "Bash(lambda tmux sam*)",
+      "Bash(lambda tasks*)",
+      "Bash(lambda ship*)",
+      "Bash(touch .shutdown_confirmed)"
+    ],
+    "deny": ["Bash(sleep*)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/permission-hook.cjs"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/ralph-stop-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+const path = require('path');
+const fs = require('fs');
+
+const cliPath = path.join(__dirname, '..', 'dist', 'cli.js');
+if (!fs.existsSync(cliPath)) {
+  console.error('Error: CLI not built yet. Run ./init.sh first.');
+  process.exit(1);
+}
+
+require(cliPath);

@@ -1,0 +1,3 @@
+- [ ] DEMO-1: Add delete button to each todo item
+- [ ] DEMO-2: Add completed checkbox with strikethrough styling
+- [ ] DEMO-3: Add filter bar (All / Active / Completed)

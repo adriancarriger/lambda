@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+dist/
+.next/
+test-results/
+playwright-report/
+.env*
+*.local.json
+.shutdown_confirmed
+.ralph-stop-log

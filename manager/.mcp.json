@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "await-pane": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["../.claude/tools/await-pane-server.cjs"]
+    }
+  }
+}

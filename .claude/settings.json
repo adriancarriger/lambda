@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": ["Bash(lambda:*)", "mcp__await-pane__await_pane"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/agents/dev-permission-hook.cjs"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledMcpjsonServers": ["await-pane"],
+  "enableAllProjectMcpServers": true
+}
