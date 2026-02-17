@@ -2,6 +2,8 @@
 
 Three AI agents collaborate via tmux to autonomously build full-stack features — optimizing for how long they can work without you, not how fast they work while you watch.
 
+**38+ hours unattended. 15 full-stack tickets. One session.**
+
 https://github.com/user-attachments/assets/3181c3c6-8f70-4e4b-bb92-e467e0ab174f
 
 Lambda is not a framework. It's an architecture — **division of labor across agents** and **vision-driven validation**. You don't need to clone this repo. Read the philosophy, take what's useful, build your own.
@@ -9,6 +11,14 @@ Lambda is not a framework. It's an architecture — **division of labor across a
 Most multi-agent setups optimize for parallelism — more agents working simultaneously. The bottleneck they don't address is babysitting. If you're monitoring agents, restarting stuck sessions, and course-correcting drift, you haven't automated the work — you've just given yourself a different job. Lambda prioritizes unattended operation: a system you can walk away from and come back to a PR.
 
 An orchestrator that can't code. A developer that can't ship. A tester that can't write production code. E2E screenshots and traces as the feedback loop. These ideas are portable to any stack, any agent framework, any LLM. The implementation here is what worked for me — a reference, not a prescription.
+
+### Proven at scale
+
+In a single unattended session, Lambda completed 15 full-stack tickets over 38+ hours. One ticket was blocked due to an infrastructure issue — not an agent failure. The session was supposed to end at bedtime — I thought I'd stopped it. Woke up, found it still running and still completing tickets, and decided to just let it go.
+
+That number didn't come for free. Early runs maxed out at 4 hours before agents drifted, got stuck, or compounded errors into unrecoverable states. It took weeks of tuning — refining quality gates, tightening agent instructions, improving trace analysis, pushing failure-prone workflows into the CLI — before the system crossed a reliability threshold where sessions stopped dying and just kept going.
+
+**Expect the same ramp-up.** Every codebase has different failure modes. The patterns in this repo (agent separation, quality gates, vision-based validation) are portable, but dialing them in for your project takes iteration. You'll likely start closer to 4 hours than 38. That's normal — the architecture is designed so that each fix compounds, and once you cross the threshold, the runtime extends dramatically.
 
 ## Contents
 
