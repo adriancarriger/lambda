@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- electron-builder signs every nested executable with this file, and
+         Electron's Renderer and GPU helpers run V8, which needs JIT. tmux,
+         git and the pty's spawn-helper get it too: one file covers them all.
+         Unsigned executable memory stays with the main process (the plugin
+         helper is the only other one that wants it, and nothing loads plugins). -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- An ad-hoc build has no Team ID to validate the helpers' libraries against. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>

@@ -1,13 +1,13 @@
 /**
- * E2E Trace Debug Tool
+ * Playwright trace reader
  *
- * LLM-friendly tool to inspect Playwright trace files for debugging E2E test failures.
+ * Agent-friendly tool to inspect Playwright trace files when an E2E test fails.
  *
  * Usage:
  *   lambda trace <command> [trace-path] [options]
  *
  * Commands:
- *   summary       - Overview + assertion expected/received
+ *   summary       - Overview: status, failed action, console errors, screenshot
  *   errors        - Errors with 2 screenshots before/after
  *   actions       - High-level action sequence (goto, click, fill)
  *   screenshots   - List all screenshots with index numbers
@@ -15,86 +15,71 @@
  *   console       - Filter console logs
  *   around        - Events around a timestamp
  *   timeline      - Condensed chronological view
- *   diagnose      - Comprehensive error scan (catches ALL known error patterns)
- *   diagnose-all  - Diagnose traces in test-results/ (use --verbose for details)
+ *   diagnose      - Error scan against known patterns (plus a project's own)
+ *   diagnose-all  - Diagnose every trace in test-results/
  */
-import { execSync } from "child_process";
-import * as fs from "fs";
-import * as path from "path";
-import * as readline from "readline";
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as readline from 'readline';
+import { z } from 'zod';
 
-import type {
-  ActionResult,
-  AfterEvent,
-  BeforeEvent,
-  BrowserEvent,
-  ConsoleEvent,
-  ContextOptionsEvent,
-  ErrorResult,
-  LogEvent,
-  ScreencastFrameEvent,
-  ScreenshotResult,
-  TraceCommandOutput,
-  TraceContext,
-  TraceEvent,
-} from "./trace-types";
+import {
+  type ActionResult,
+  type AfterEvent,
+  type BeforeEvent,
+  type BrowserEvent,
+  type ConsoleEvent,
+  type ContextOptionsEvent,
+  type ErrorResult,
+  type LogEvent,
+  type ScreencastFrameEvent,
+  type ScreenshotResult,
+  type StderrEvent,
+  type StdoutEvent,
+  type TraceCommandOutput,
+  type TraceContext,
+  type TraceEvent,
+  TraceEventSchema,
+  pageErrorMessage,
+} from './trace-types';
 
 // Configuration
 const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
-/**
- * Find the test-results directory using a heuristic:
- * 1. Check process.cwd()/test-results
- * 2. Search upward for a directory containing test-results/
- */
-function findTestResultsDir(): string {
-  // 1. Check current working directory
-  const cwdPath = path.join(process.cwd(), "test-results");
+const PLAYWRIGHT_CONFIGS = [
+  'playwright.config.ts',
+  'playwright.config.js',
+  'playwright.config.mjs',
+  'playwright.config.cjs',
+];
 
-  if (fs.existsSync(cwdPath)) {
-    return cwdPath;
-  }
-
-  // 2. Search upward for test-results/
-  const searchUpward = (startDir: string): string | null => {
-    if (startDir === path.dirname(startDir)) {
-      return null;
-    }
-
-    const testResultsPath = path.join(startDir, "test-results");
-
-    if (fs.existsSync(testResultsPath)) {
-      return testResultsPath;
-    }
-
-    return searchUpward(path.dirname(startDir));
-  };
-
-  const result = searchUpward(process.cwd());
-
-  if (result) {
-    return result;
-  }
-
-  throw new Error(
-    "Could not find test-results directory.\n" +
-      "Run from a directory with test-results/, or a parent directory containing it.",
+/** The nearest folder, from `startDir` upward, holding a Playwright config. */
+export function findPlaywrightConfigDir(startDir: string): string | null {
+  const hasConfig = PLAYWRIGHT_CONFIGS.some((name) =>
+    fs.existsSync(path.join(startDir, name))
   );
+
+  if (hasConfig) {
+    return startDir;
+  }
+
+  const parent = path.dirname(startDir);
+
+  return parent === startDir ? null : findPlaywrightConfigDir(parent);
 }
 
-// Lazy-loaded test results directory - using closure for memoization
-const getTestResultsDir = (() => {
-  // eslint-disable-next-line no-restricted-syntax -- let needed for memoization closure
-  let cached: string | null = null;
+/**
+ * `test-results/` sits next to the Playwright config. Without a config, the
+ * current folder's `test-results/` is used.
+ */
+export function findTestResultsDir(startDir: string = process.cwd()): string {
+  const configDir = findPlaywrightConfigDir(startDir);
 
-  return (): string => {
-    if (!cached) {
-      cached = findTestResultsDir();
-    }
+  return path.join(configDir ?? startDir, 'test-results');
+}
 
-    return cached;
-  };
-})();
+const getTestResultsDir = (): string => findTestResultsDir();
 
 // Format relative time (e.g., "2 minutes ago")
 function formatRelativeTime(ms: number): string {
@@ -103,14 +88,14 @@ function formatRelativeTime(ms: number): string {
   const hours = Math.floor(minutes / 60);
 
   if (hours > 0) {
-    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
   }
 
   if (minutes > 0) {
-    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
   }
 
-  return `${seconds} second${seconds === 1 ? "" : "s"} ago`;
+  return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
 }
 
 // Get trace info (path, age, staleness)
@@ -147,7 +132,7 @@ function findAllTraces(): Array<{
   const dirs = fs.readdirSync(getTestResultsDir());
   const traces = dirs
     .map((dir) => {
-      const traceZip = path.join(getTestResultsDir(), dir, "trace.zip");
+      const traceZip = path.join(getTestResultsDir(), dir, 'trace.zip');
 
       if (!fs.existsSync(traceZip)) {
         return null;
@@ -163,7 +148,7 @@ function findAllTraces(): Array<{
     })
     .filter(
       (
-        trace,
+        trace
       ): trace is {
         testName: string;
         tracePath: string;
@@ -171,7 +156,7 @@ function findAllTraces(): Array<{
         age: number;
         ageFormatted: string;
         isStale: boolean;
-      } => trace !== null,
+      } => trace !== null
     )
     // Sort by mtime descending (newest first)
     .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
@@ -185,23 +170,23 @@ async function selectTraceInteractively(): Promise<string> {
 
   if (traces.length === 0) {
     throw new Error(
-      `No trace.zip files found in ${getTestResultsDir()}. Run an E2E test first.`,
+      `No trace.zip files found in ${getTestResultsDir()}. Run an E2E test first.`
     );
   }
 
-  console.error("\n💡 No trace path provided - entering interactive mode.");
+  console.error('\n💡 No trace path provided - entering interactive mode.');
   console.error(
-    "   Tip: Pass a path directly: lambda trace <command> <path-to-trace.zip>\n",
+    '   Tip: Pass a path directly: lambda trace <command> <path-to-trace.zip>\n'
   );
-  console.error("📋 Available traces:\n");
+  console.error('📋 Available traces:\n');
 
   traces.forEach((trace, i) => {
-    const staleMarker = trace.isStale ? " ⚠️  STALE" : "";
+    const staleMarker = trace.isStale ? ' ⚠️  STALE' : '';
     const timeStr = trace.mtime.toLocaleTimeString();
     console.error(
       `  ${i + 1}. ${trace.testName}\n     ${
         trace.ageFormatted
-      } (${timeStr})${staleMarker}\n`,
+      } (${timeStr})${staleMarker}\n`
     );
   });
 
@@ -211,7 +196,7 @@ async function selectTraceInteractively(): Promise<string> {
   });
 
   return new Promise((resolve, reject) => {
-    rl.question("Select trace number: ", (answer) => {
+    rl.question('Select trace number: ', (answer) => {
       rl.close();
 
       const selection = parseInt(answer, 10);
@@ -219,8 +204,8 @@ async function selectTraceInteractively(): Promise<string> {
       if (isNaN(selection) || selection < 1 || selection > traces.length) {
         reject(
           new Error(
-            `Invalid selection. Enter a number between 1 and ${traces.length}`,
-          ),
+            `Invalid selection. Enter a number between 1 and ${traces.length}`
+          )
         );
 
         return;
@@ -229,7 +214,7 @@ async function selectTraceInteractively(): Promise<string> {
       const selected = traces[selection - 1];
 
       if (!selected) {
-        reject(new Error("Invalid selection"));
+        reject(new Error('Invalid selection'));
 
         return;
       }
@@ -249,17 +234,17 @@ function printTraceHeader(traceZipPath: string): void {
 
   if (info.isStale) {
     console.error(
-      `⚠️  WARNING: This trace is ${info.ageFormatted}. Run a fresh E2E test for current results.`,
+      `⚠️  WARNING: This trace is ${info.ageFormatted}. Run a fresh E2E test for current results.`
     );
   }
 
-  console.error("");
+  console.error('');
 }
 
 // Unzip trace to sibling directory with caching
 function unzipTrace(traceZipPath: string): string {
   const traceDir = path.dirname(traceZipPath);
-  const outputDir = path.join(traceDir, "unzipped");
+  const outputDir = path.join(traceDir, 'unzipped');
 
   // Check cache: if unzipped/ exists and is newer than trace.zip, reuse it
   if (fs.existsSync(outputDir)) {
@@ -275,9 +260,19 @@ function unzipTrace(traceZipPath: string): string {
     fs.rmSync(outputDir, { recursive: true });
   }
 
-  // Unzip fresh
-  fs.mkdirSync(outputDir, { recursive: true });
-  execSync(`unzip -q "${traceZipPath}" -d "${outputDir}"`);
+  // Unzip into a temp folder and move it into place only once it worked, so
+  // a failed unzip never leaves an unzipped/ the cache above would trust.
+  const partialDir = fs.mkdtempSync(path.join(traceDir, 'unzipping-'));
+
+  try {
+    execFileSync('unzip', ['-q', traceZipPath, '-d', partialDir]);
+  } catch (error) {
+    fs.rmSync(partialDir, { recursive: true, force: true });
+
+    throw error;
+  }
+
+  fs.renameSync(partialDir, outputDir);
 
   return outputDir;
 }
@@ -300,7 +295,7 @@ async function getTraceDirAsync(inputPath?: string): Promise<{
     : path.join(process.cwd(), tracePath);
 
   // If it's a zip file, unzip it
-  if (resolvedTracePath.endsWith(".zip")) {
+  if (resolvedTracePath.endsWith('.zip')) {
     if (!fs.existsSync(resolvedTracePath)) {
       throw new Error(`Trace file not found: ${resolvedTracePath}`);
     }
@@ -319,7 +314,7 @@ async function getTraceDirAsync(inputPath?: string): Promise<{
     fs.statSync(resolvedTracePath).isDirectory()
   ) {
     // Try to find the parent trace.zip for header info
-    const parentZip = path.join(path.dirname(resolvedTracePath), "trace.zip");
+    const parentZip = path.join(path.dirname(resolvedTracePath), 'trace.zip');
     const traceZipPath = fs.existsSync(parentZip) ? parentZip : null;
 
     if (traceZipPath) {
@@ -333,14 +328,14 @@ async function getTraceDirAsync(inputPath?: string): Promise<{
 }
 
 // Sync version for diagnose-all (which provides explicit paths)
-function getTraceDir(inputPath: string): string {
+export function getTraceDir(inputPath: string): string {
   // Resolve relative paths
   const tracePath = path.isAbsolute(inputPath)
     ? inputPath
     : path.join(process.cwd(), inputPath);
 
   // If it's a zip file, unzip it
-  if (tracePath.endsWith(".zip")) {
+  if (tracePath.endsWith('.zip')) {
     if (!fs.existsSync(tracePath)) {
       throw new Error(`Trace file not found: ${tracePath}`);
     }
@@ -356,32 +351,84 @@ function getTraceDir(inputPath: string): string {
   throw new Error(`Invalid trace path: ${tracePath}`);
 }
 
-// Parse JSONL file
-function parseJsonlFile<T = TraceEvent>(filePath: string): T[] {
+// Read a JSONL file: one JSON value per line, unparseable lines reported and skipped
+function readJsonlFile(filePath: string): unknown[] {
   if (!fs.existsSync(filePath)) {
     return [];
   }
 
-  const content = fs.readFileSync(filePath, "utf-8");
-  const lines = content.split("\n").filter((line) => line.trim());
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n').filter((line) => line.trim());
 
-  return lines
-    .map((line) => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- JSONL line parsed to generic trace event type
-        return JSON.parse(line) as T;
-      } catch {
-        console.error(`Failed to parse line: ${line.slice(0, 100)}...`);
+  return lines.flatMap((line): unknown[] => {
+    try {
+      const value: unknown = JSON.parse(line);
 
-        return null;
-      }
-    })
-    .filter((event): event is T => event !== null);
+      return [value];
+    } catch {
+      console.error(`Failed to parse line: ${line.slice(0, 100)}...`);
+
+      return [];
+    }
+  });
 }
 
+/** Any line's `type`, to tell a known kind that failed from one never read. */
+const LineTypeSchema = z.object({ type: z.string() });
+
+/**
+ * The lines this reader knows, parsed; lines of other kinds (resource
+ * snapshots…) are left out. A line of a known kind that fails its schema is
+ * reported, as an unparseable line is, rather than vanishing from the trace.
+ */
+const toTraceEvents = (values: unknown[]): TraceEvent[] =>
+  values.flatMap((value) => {
+    const parsed = TraceEventSchema.safeParse(value);
+
+    if (parsed.success) {
+      return [parsed.data];
+    }
+
+    const line = LineTypeSchema.safeParse(value);
+
+    if (line.success && TraceEventSchema.optionsMap.has(line.data.type)) {
+      console.error(
+        `Failed to read a "${line.data.type}" line: ${JSON.stringify(
+          value
+        ).slice(0, 100)}...`
+      );
+    }
+
+    return [];
+  });
+
+const parseJsonlFile = (filePath: string): TraceEvent[] =>
+  toTraceEvents(readJsonlFile(filePath));
+
+/** Whichever time the last line of a trace carries, whatever its kind. */
+const LastLineTimeSchema = z
+  .object({
+    startTime: z.number().optional(),
+    endTime: z.number().optional(),
+    timestamp: z.number().optional(),
+  })
+  .passthrough();
+
+const lastLineTime = (value: unknown): number | undefined => {
+  const parsed = LastLineTimeSchema.safeParse(value);
+
+  if (!parsed.success) {
+    return undefined;
+  }
+
+  const { startTime, endTime, timestamp } = parsed.data;
+
+  return startTime || endTime || timestamp || undefined;
+};
+
 // Parse trace files into context
-function parseTrace(traceDir: string): TraceContext {
-  const testTrace = parseJsonlFile(path.join(traceDir, "test.trace"));
+export function parseTrace(traceDir: string): TraceContext {
+  const testTrace = parseJsonlFile(path.join(traceDir, 'test.trace'));
 
   // Load ALL numbered trace files (0-trace.trace, 1-trace.trace, etc.)
   // This ensures we capture errors from all browser contexts/pages
@@ -390,66 +437,65 @@ function parseTrace(traceDir: string): TraceContext {
     .filter((f) => /^\d+-trace\.trace$/.test(f))
     .sort(); // Ensure consistent order
 
-  const browserTrace = traceFiles.flatMap((f) =>
-    parseJsonlFile(path.join(traceDir, f)),
+  const browserLines = traceFiles.flatMap((f) =>
+    readJsonlFile(path.join(traceDir, f))
   );
+  const browserTrace = toTraceEvents(browserLines);
 
   // Extract context options
   const contextOptions = browserTrace.find(
-    (e): e is ContextOptionsEvent => e.type === "context-options",
+    (e): e is ContextOptionsEvent => e.type === 'context-options'
   );
 
   // Extract screenshots
   const screenshots = browserTrace.filter(
-    (e): e is ScreencastFrameEvent => e.type === "screencast-frame",
+    (e): e is ScreencastFrameEvent => e.type === 'screencast-frame'
   );
 
   // Extract console messages
   const consoleMessages = browserTrace.filter(
-    (e): e is ConsoleEvent => e.type === "console",
+    (e): e is ConsoleEvent => e.type === 'console'
   );
 
   // Extract errors (pageError events)
   const errors = browserTrace.filter(
-    (e): e is BrowserEvent => e.type === "event" && e.method === "pageError",
+    (e): e is BrowserEvent => e.type === 'event' && e.method === 'pageError'
   );
 
   // Extract actions (before/after pairs for key API calls)
   const beforeEvents = browserTrace.filter(
-    (e): e is BeforeEvent => e.type === "before",
+    (e): e is BeforeEvent => e.type === 'before'
   );
   const afterEvents = browserTrace.filter(
-    (e): e is AfterEvent => e.type === "after",
+    (e): e is AfterEvent => e.type === 'after'
   );
 
   const afterMap = new Map(afterEvents.map((e) => [e.callId, e]));
 
   const actions = beforeEvents
-    .filter((e) => isKeyAction(e.apiName))
+    .filter((e) => isKeyAction(actionApiName(e)))
     .map((before) => {
       const after = afterMap.get(before.callId);
 
       return {
         ...before,
+        // Populate `apiName` from the human title / class.method so downstream
+        // display works regardless of the source trace format.
+        apiName: actionLabel(before),
         endTime: after?.endTime,
         error: after?.error?.message,
       };
     });
 
   // Extract logs
-  const logs = browserTrace.filter((e): e is LogEvent => e.type === "log");
+  const logs = browserTrace.filter((e): e is LogEvent => e.type === 'log');
 
   // Determine test status - find first assertion error in test.trace stdout
-  const assertionError = testTrace.find((event) => {
-    if (event.type !== "stdout" && event.type !== "stderr") {
-      return false;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- stdout/stderr trace events have untyped text field
-    const { text } = event as { text: string };
-
-    return text.includes("Error:") || text.includes("Expected");
-  });
+  const assertionError = testTrace.find(
+    (event): event is StdoutEvent | StderrEvent =>
+      (event.type === 'stdout' || event.type === 'stderr') &&
+      (event.text.includes('Error:') || event.text.includes('Expected'))
+  );
 
   // Check for page errors
   const [firstError] = errors;
@@ -457,14 +503,10 @@ function parseTrace(traceDir: string): TraceContext {
   // Determine status and error info
   const statusInfo = (() => {
     if (assertionError) {
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- stdout/stderr trace events have untyped text/timestamp fields
-      const { text, timestamp } = assertionError as {
-        text: string;
-        timestamp: number;
-      };
+      const { text, timestamp } = assertionError;
 
       return {
-        status: "failed" as const,
+        status: 'failed' as const,
         errorMessage: text,
         errorTime: timestamp,
       };
@@ -472,14 +514,14 @@ function parseTrace(traceDir: string): TraceContext {
 
     if (firstError) {
       return {
-        status: "failed" as const,
-        errorMessage: firstError.params.error?.error.message,
+        status: 'failed' as const,
+        errorMessage: pageErrorMessage(firstError),
         errorTime: firstError.time,
       };
     }
 
     return {
-      status: "passed" as const,
+      status: 'passed' as const,
       errorMessage: undefined,
       errorTime: undefined,
     };
@@ -489,15 +531,7 @@ function parseTrace(traceDir: string): TraceContext {
 
   // Calculate duration
   const startTime = contextOptions?.monotonicTime || 0;
-  const lastEvent = browserTrace[browserTrace.length - 1];
-  const endTime =
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- trace events are a union type, need to try each variant
-    (lastEvent as BeforeEvent)?.startTime ||
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- trace events are a union type, need to try each variant
-    (lastEvent as AfterEvent)?.endTime ||
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- trace events are a union type, need to try each variant
-    (lastEvent as ScreencastFrameEvent)?.timestamp ||
-    startTime;
+  const endTime = lastLineTime(browserLines.at(-1)) ?? startTime;
   const duration = endTime - startTime;
 
   return {
@@ -516,30 +550,57 @@ function parseTrace(traceDir: string): TraceContext {
 }
 
 // Check if an API name is a key action
-function isKeyAction(apiName: string): boolean {
-  const keyActions = [
-    "page.goto",
-    "page.click",
-    "locator.click",
-    "locator.fill",
-    "locator.type",
-    "locator.press",
-    "page.fill",
-    "page.type",
-    "expect.toHaveValue",
-    "expect.toBeVisible",
-    "expect.toHaveText",
-    "expect.toHaveURL",
-    "expect.toHaveTitle",
-    "expect.not.toBeVisible",
+// Newer Playwright traces (~1.44+) drop the single `apiName` on `before` events
+// in favour of `class` + `method` (e.g. class "Frame", method "click") plus a
+// human-readable `title`. Normalize so filtering/display work on both formats.
+function actionApiName(e: BeforeEvent): string {
+  if (e.apiName) {
+    return e.apiName;
+  }
+
+  return [e.class, e.method].filter(Boolean).join('.');
+}
+
+function actionLabel(e: BeforeEvent): string {
+  return e.title ?? actionApiName(e);
+}
+
+function isKeyAction(apiName: string | undefined): boolean {
+  if (!apiName) {
+    return false;
+  }
+
+  const normalized = apiName.toLowerCase();
+  // The method is the segment after the last dot ("frame.click" → "click";
+  // legacy "locator.click" → "click"), or the whole string if there's no dot.
+  const method = normalized.includes('.')
+    ? normalized.slice(normalized.lastIndexOf('.') + 1)
+    : normalized;
+
+  const keyMethods = [
+    'goto',
+    'click',
+    'fill',
+    'type',
+    'press',
+    'check',
+    'uncheck',
+    'selectoption',
+    'setinputfiles',
   ];
 
-  return keyActions.some((action) => apiName.includes(action));
+  if (keyMethods.includes(method)) {
+    return true;
+  }
+
+  // Assertions: legacy apiName is "expect.toBeVisible"; new format is method
+  // "expect" (the matcher lives in `title`), so treat any expect as a key action.
+  return method === 'expect' || normalized.startsWith('expect');
 }
 
 // Get screenshot path from sha1
 function getScreenshotPath(traceDir: string, sha1: string): string {
-  return path.join(traceDir, "resources", sha1);
+  return path.join(traceDir, 'resources', sha1);
 }
 
 // Find screenshots around a timestamp
@@ -547,7 +608,7 @@ function getScreenshotsAround(
   screenshots: ScreencastFrameEvent[],
   timestamp: number,
   contextCount: number,
-  traceDir: string,
+  traceDir: string
 ): ScreenshotResult {
   // Sort screenshots by timestamp
   const sorted = [...screenshots].sort((a, b) => a.timestamp - b.timestamp);
@@ -555,7 +616,7 @@ function getScreenshotsAround(
   // Handle empty array
   if (sorted.length === 0) {
     return {
-      target: "",
+      target: '',
       targetIndex: -1,
       timestamp: 0,
       before: [],
@@ -578,7 +639,7 @@ function getScreenshotsAround(
 
   if (!target) {
     return {
-      target: "",
+      target: '',
       targetIndex: -1,
       timestamp: 0,
       before: [],
@@ -630,13 +691,13 @@ function loadErrorContext(traceDir: string): {
   errorLocation: string;
 } | null {
   const testResultsDir = path.dirname(traceDir);
-  const errorContextPath = path.join(testResultsDir, "error-context.md");
+  const errorContextPath = path.join(testResultsDir, 'error-context.md');
 
   if (!fs.existsSync(errorContextPath)) {
     return null;
   }
 
-  const content = fs.readFileSync(errorContextPath, "utf-8");
+  const content = fs.readFileSync(errorContextPath, 'utf-8');
 
   // Parse the markdown file
   // Format:
@@ -657,28 +718,72 @@ function loadErrorContext(traceDir: string): {
   }
 
   return {
-    testName: nameMatch?.[1]?.trim() || "Unknown test",
-    errorMessage: errorMatch[1]?.trim() || "Unknown error",
-    errorLocation: locationMatch?.[1]?.trim() || "Unknown location",
+    testName: nameMatch?.[1]?.trim() || 'Unknown test',
+    errorMessage: errorMatch[1]?.trim() || 'Unknown error',
+    errorLocation: locationMatch?.[1]?.trim() || 'Unknown location',
   };
 }
 
-// Command: summary
-function commandSummary(ctx: TraceContext): void {
+export interface TraceSummary {
+  testName: string;
+  duration: string;
+  status: TraceContext['status'];
+  errorTime?: number;
+  errorMessage?: string;
+  errorLocation?: string;
+  /** The first action that failed, with its error. */
+  failedAction?: { apiName: string; error: string };
+  /** Console errors, oldest first. */
+  consoleErrors: string[];
+  /** The screenshot nearest the failure (or the last one). */
+  screenshot?: string;
+  counts: {
+    screenshots: number;
+    consoleMessages: number;
+    errors: number;
+    actions: number;
+  };
+}
+
+/** The summary of a parsed trace. */
+export function buildSummary(ctx: TraceContext): TraceSummary {
   // Check for error-context.md which Playwright writes for failed tests
   const errorContext = loadErrorContext(ctx.tracePath);
 
   // If error-context.md exists, the test failed (even if trace says "passed")
-  const actualStatus = errorContext ? "failed" : ctx.status;
+  const actualStatus = errorContext ? 'failed' : ctx.status;
   const actualErrorMessage = errorContext?.errorMessage || ctx.errorMessage;
 
-  const result = {
+  const failed = ctx.actions.find((action) => action.error);
+  const failedAction =
+    failed?.error !== undefined
+      ? { apiName: failed.apiName, error: failed.error }
+      : undefined;
+
+  const lastScreenshotTime =
+    ctx.screenshots.length > 0
+      ? Math.max(...ctx.screenshots.map((s) => s.timestamp))
+      : 0;
+  const errorTime = ctx.errorTime ?? failed?.endTime ?? lastScreenshotTime;
+  const { target } = getScreenshotsAround(
+    ctx.screenshots,
+    errorTime,
+    0,
+    ctx.tracePath
+  );
+
+  return {
     testName: ctx.testName,
-    duration: ctx.duration ? `${(ctx.duration / 1000).toFixed(2)}s` : "unknown",
+    duration: ctx.duration ? `${(ctx.duration / 1000).toFixed(2)}s` : 'unknown',
     status: actualStatus,
     errorTime: ctx.errorTime,
     errorMessage: actualErrorMessage?.slice(0, 500),
     errorLocation: errorContext?.errorLocation,
+    failedAction,
+    consoleErrors: ctx.consoleMessages
+      .filter((m) => m.messageType === 'error')
+      .map((m) => m.text.slice(0, 500)),
+    screenshot: target || undefined,
     counts: {
       screenshots: ctx.screenshots.length,
       consoleMessages: ctx.consoleMessages.length,
@@ -686,7 +791,11 @@ function commandSummary(ctx: TraceContext): void {
       actions: ctx.actions.length,
     },
   };
-  output("summary", ctx.tracePath, result);
+}
+
+// Command: summary
+function commandSummary(ctx: TraceContext): void {
+  output('summary', ctx.tracePath, buildSummary(ctx));
 }
 
 // Command: errors
@@ -695,23 +804,23 @@ function commandErrors(ctx: TraceContext): void {
   const errorContext = loadErrorContext(ctx.tracePath);
 
   const errorResults = ctx.errors.map((error) => {
-    const errorInfo = error.params.error?.error;
+    const errorMessage = pageErrorMessage(error);
     const screenshotResult = getScreenshotsAround(
       ctx.screenshots,
       error.time,
       2,
-      ctx.tracePath,
+      ctx.tracePath
     );
 
     // Get console messages around the error (+/-1000ms)
     const consoleContext = ctx.consoleMessages.filter(
-      (c) => Math.abs(c.time - error.time) < 1000,
+      (c) => Math.abs(c.time - error.time) < 1000
     );
 
     return {
       timestamp: error.time,
-      message: errorInfo?.message || "Unknown error",
-      stack: errorInfo?.stack,
+      message: errorMessage || 'Unknown error',
+      stack: error.params.error?.error?.stack,
       screenshots: {
         before: screenshotResult.before,
         target: {
@@ -743,7 +852,7 @@ function commandErrors(ctx: TraceContext): void {
         ctx.screenshots,
         lastScreenshotTime,
         2,
-        ctx.tracePath,
+        ctx.tracePath
       );
 
       return [
@@ -751,7 +860,7 @@ function commandErrors(ctx: TraceContext): void {
           timestamp: lastScreenshotTime,
           message: errorContext.errorMessage,
           location: errorContext.errorLocation,
-          source: "error-context.md" as const,
+          source: 'error-context.md' as const,
           screenshots: {
             before: screenshotResult.before,
             target: {
@@ -772,17 +881,17 @@ function commandErrors(ctx: TraceContext): void {
         ctx.screenshots,
         ctx.errorTime,
         2,
-        ctx.tracePath,
+        ctx.tracePath
       );
 
       const consoleContext = ctx.consoleMessages.filter(
-        (c) => Math.abs(c.time - ctx.errorTime!) < 1000,
+        (c) => Math.abs(c.time - ctx.errorTime!) < 1000
       );
 
       return [
         {
           timestamp: ctx.errorTime,
-          message: ctx.errorMessage || "Test failed",
+          message: ctx.errorMessage || 'Test failed',
           screenshots: {
             before: screenshotResult.before,
             target: {
@@ -802,7 +911,7 @@ function commandErrors(ctx: TraceContext): void {
 
   const results: ErrorResult[] = [...errorResults, ...fallbackResult];
 
-  output("errors", ctx.tracePath, results);
+  output('errors', ctx.tracePath, results);
 }
 
 // Command: actions
@@ -816,8 +925,7 @@ function commandActions(ctx: TraceContext): void {
     };
 
     // Extract selector/url/value from params
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- action params are untyped in trace format
-    const params = action.params as Record<string, unknown>;
+    const { params } = action;
 
     if (params.selector) {
       result.selector = String(params.selector);
@@ -838,7 +946,7 @@ function commandActions(ctx: TraceContext): void {
     return result;
   });
 
-  output("actions", ctx.tracePath, results);
+  output('actions', ctx.tracePath, results);
 }
 
 // Command: screenshots
@@ -853,19 +961,19 @@ function commandScreenshots(ctx: TraceContext): void {
     height: s.height,
   }));
 
-  output("screenshots", ctx.tracePath, results);
+  output('screenshots', ctx.tracePath, results);
 }
 
 // Command: screenshot
 function commandScreenshot(
   ctx: TraceContext,
-  options: Record<string, string | boolean | number>,
+  options: Record<string, string | boolean | number>
 ): void {
-  const at = options.at || "error";
-  const contextCount = Number(options.context) || (at === "error" ? 2 : 0);
+  const at = options.at || 'error';
+  const contextCount = Number(options.context) || (at === 'error' ? 2 : 0);
 
   const getTimestamp = (): number => {
-    if (at === "error") {
+    if (at === 'error') {
       return (
         ctx.errorTime ||
         ctx.screenshots[ctx.screenshots.length - 1]?.timestamp ||
@@ -873,16 +981,16 @@ function commandScreenshot(
       );
     }
 
-    if (typeof at === "number" || !isNaN(Number(at))) {
+    if (typeof at === 'number' || !isNaN(Number(at))) {
       const index = Number(at);
       const sorted = [...ctx.screenshots].sort(
-        (a, b) => a.timestamp - b.timestamp,
+        (a, b) => a.timestamp - b.timestamp
       );
       const screenshot = sorted[index];
 
       if (!screenshot) {
         throw new Error(
-          `Screenshot index ${index} out of range (0-${sorted.length - 1})`,
+          `Screenshot index ${index} out of range (0-${sorted.length - 1})`
         );
       }
 
@@ -898,15 +1006,15 @@ function commandScreenshot(
     ctx.screenshots,
     timestamp,
     contextCount,
-    ctx.tracePath,
+    ctx.tracePath
   );
-  output("screenshot", ctx.tracePath, result);
+  output('screenshot', ctx.tracePath, result);
 }
 
 // Command: console
 function commandConsole(
   ctx: TraceContext,
-  options: Record<string, string | boolean | number>,
+  options: Record<string, string | boolean | number>
 ): void {
   const limit = Number(options.limit) || 100;
 
@@ -923,7 +1031,7 @@ function commandConsole(
     .filter((m) => {
       // Filter by regex if specified
       if (options.filter) {
-        const regex = new RegExp(String(options.filter), "i");
+        const regex = new RegExp(String(options.filter), 'i');
 
         return regex.test(m.text);
       }
@@ -937,41 +1045,41 @@ function commandConsole(
     type: m.messageType,
     text: m.text,
     location: m.location
-      ? `${m.location.url.split("/").pop()}:${m.location.lineNumber}`
+      ? `${m.location.url.split('/').pop()}:${m.location.lineNumber}`
       : undefined,
   }));
 
-  output("console", ctx.tracePath, results);
+  output('console', ctx.tracePath, results);
 }
 
 // Command: around
 function commandAround(
   ctx: TraceContext,
-  options: Record<string, string | boolean | number>,
+  options: Record<string, string | boolean | number>
 ): void {
   const time = Number(options.time);
 
   if (isNaN(time)) {
-    throw new Error("--time is required for around command");
+    throw new Error('--time is required for around command');
   }
 
   const window = Number(options.window) || 500;
 
   // Get events within window
   const consoleInWindow = ctx.consoleMessages.filter(
-    (c) => Math.abs(c.time - time) <= window,
+    (c) => Math.abs(c.time - time) <= window
   );
 
   const actionsInWindow = ctx.actions.filter(
-    (a) => Math.abs(a.startTime - time) <= window,
+    (a) => Math.abs(a.startTime - time) <= window
   );
 
   const logsInWindow = ctx.logs.filter(
-    (l) => Math.abs(l.time - time) <= window,
+    (l) => Math.abs(l.time - time) <= window
   );
 
   const errorsInWindow = ctx.errors.filter(
-    (e) => Math.abs(e.time - time) <= window,
+    (e) => Math.abs(e.time - time) <= window
   );
 
   // Get nearest screenshot
@@ -979,10 +1087,10 @@ function commandAround(
     ctx.screenshots,
     time,
     1,
-    ctx.tracePath,
+    ctx.tracePath
   );
 
-  output("around", ctx.tracePath, {
+  output('around', ctx.tracePath, {
     targetTime: time,
     window: `±${window}ms`,
     nearestScreenshot: screenshotResult.target,
@@ -1002,10 +1110,289 @@ function commandAround(
       })),
       errors: errorsInWindow.map((e) => ({
         time: e.time,
-        message: e.params.error?.error.message,
+        message: pageErrorMessage(e),
       })),
     },
   });
+}
+
+/** A known error and what to do about it. `diagnose` reports every match. */
+export interface ErrorPattern {
+  pattern: RegExp;
+  category: string;
+  explanation: string;
+  solution: string;
+}
+
+/**
+ * The patterns every project gets. A project adds its own through
+ * `registerTraceCommand(program, { extraPatterns })`; they are checked after
+ * these, so a project pattern only claims text these don't. lambda.json's
+ * `trace.patterns` can also put one ahead of a category here.
+ *
+ * Each piece of text gets the first pattern that matches it, so the order
+ * counts: the specific ones come before the generic ones they overlap.
+ */
+export const DEFAULT_ERROR_PATTERNS: ErrorPattern[] = [
+  // Access errors
+  {
+    pattern: /permission denied|\bforbidden\b/i,
+    category: 'Permission Denied',
+    explanation:
+      'The server refused this operation: the user may not have access to it.',
+    solution:
+      "Check what the signed-in user is allowed to do, and the server's access checks.",
+  },
+  {
+    pattern: /\bunauthori[sz]ed\b|\bunauthenticated\b|not signed in/i,
+    category: 'Auth Error',
+    explanation: 'The request needed a signed-in user, and had none.',
+    solution:
+      'Make sure the test signs in before this step, and that the session has not expired.',
+  },
+  // Timeout errors
+  {
+    pattern: /Timed out.*waiting for/i,
+    category: 'Timeout',
+    explanation:
+      'A Playwright assertion or wait timed out. The expected element/state did not appear in time.',
+    solution:
+      'Check screenshots to see actual UI state. May indicate a backend error preventing the UI from updating.',
+  },
+  // Network errors
+  {
+    pattern: /status of 4\d\d/i,
+    category: 'HTTP 4xx Error',
+    explanation: 'Client error response from server (400-499).',
+    solution: 'Check the specific status code and request details.',
+  },
+  {
+    pattern: /status of 5\d\d/i,
+    category: 'HTTP 5xx Error',
+    explanation:
+      'Server error response (500-599). Backend crashed or unavailable.',
+    solution: "Check the server's logs for the actual error.",
+  },
+  // Generic errors
+  {
+    pattern: /Something went wrong/i,
+    category: 'UI Error',
+    explanation: 'The UI displayed a generic error message to the user.',
+    solution:
+      'Check the console and backend logs for the actual error that caused this.',
+  },
+  {
+    pattern: /Unhandled error|unhandledRejection/i,
+    category: 'Unhandled Exception',
+    explanation: 'An unhandled exception occurred.',
+    solution: 'Check the stack trace for the source of the error.',
+  },
+  {
+    pattern: /ECONNREFUSED|ETIMEDOUT/i,
+    category: 'Connection Error',
+    explanation: 'Failed to connect to a service (database, API, etc.).',
+    solution: 'Verify all services are running and accessible.',
+  },
+];
+
+// Diagnose results type
+export interface DiagnoseResults {
+  summary: string;
+  issueCount: number;
+  byCategory: Record<string, number>;
+  primaryDiagnosis: {
+    explanation: string;
+    recommendation: string;
+  };
+  issues: Array<{
+    category: string;
+    timestamp: number;
+    source: string;
+    explanation: string;
+    solution: string;
+    snippet: string;
+  }>;
+}
+
+interface DiagnosticIssue {
+  category: string;
+  timestamp: number;
+  source: 'console' | 'pageError' | 'testOutput';
+  text: string;
+  explanation: string;
+  solution: string;
+}
+
+/** The categories that make a diagnosis critical. */
+const CRITICAL_CATEGORIES = ['Permission Denied', 'Test Assertion Failed'];
+
+/** One issue per piece of text a pattern matches. */
+const matchIssue = (
+  patterns: ErrorPattern[],
+  text: string,
+  timestamp: number,
+  source: DiagnosticIssue['source']
+): DiagnosticIssue[] => {
+  const patternInfo = patterns.find(({ pattern }) => pattern.test(text));
+
+  if (!patternInfo) {
+    return [];
+  }
+
+  return [
+    {
+      category: patternInfo.category,
+      timestamp,
+      source,
+      text: text.slice(0, 800),
+      explanation: patternInfo.explanation,
+      solution: patternInfo.solution,
+    },
+  ];
+};
+
+/** stdout/stderr/error events from test.trace, as text. */
+const testOutputTexts = (
+  tracePath: string
+): Array<{ text: string; timestamp: number }> => {
+  const testTracePath = path.join(tracePath, 'test.trace');
+
+  if (!fs.existsSync(testTracePath)) {
+    return [];
+  }
+
+  return parseJsonlFile(testTracePath).flatMap((event) => {
+    if (event.type === 'stdout' || event.type === 'stderr') {
+      const { text, timestamp } = event;
+
+      return text ? [{ text, timestamp }] : [];
+    }
+
+    if (event.type === 'error') {
+      const { message } = event;
+
+      // error events don't have timestamps
+      return message ? [{ text: message, timestamp: 0 }] : [];
+    }
+
+    return [];
+  });
+};
+
+/** Scan a parsed trace for known error patterns (shared by diagnose and diagnose-all). */
+export function getDiagnoseResults(
+  ctx: TraceContext,
+  options?: { patterns?: ErrorPattern[] }
+): DiagnoseResults {
+  const patterns = options?.patterns ?? DEFAULT_ERROR_PATTERNS;
+
+  const consoleIssues = ctx.consoleMessages.flatMap((msg) =>
+    matchIssue(patterns, msg.text, msg.time, 'console')
+  );
+
+  const pageErrorIssues = ctx.errors.flatMap((error) =>
+    matchIssue(patterns, pageErrorMessage(error) || '', error.time, 'pageError')
+  );
+
+  // test.trace stdout/stderr/error catches what never reaches the browser console
+  const testOutputIssues = testOutputTexts(ctx.tracePath).flatMap(
+    ({ text, timestamp }) => matchIssue(patterns, text, timestamp, 'testOutput')
+  );
+
+  // Check error-context.md for test assertion failures (Playwright writes this for failed tests)
+  const errorContext = loadErrorContext(ctx.tracePath);
+  const errorContextIssues: DiagnosticIssue[] = errorContext
+    ? [
+        (() => {
+          const errorPatternInfo = patterns.find(({ pattern }) =>
+            pattern.test(errorContext.errorMessage)
+          );
+
+          return {
+            category: errorPatternInfo?.category || 'Test Assertion Failed',
+            timestamp: 0, // error-context.md doesn't have a timestamp
+            source: 'testOutput' as const,
+            text: errorContext.errorMessage.slice(0, 800),
+            explanation:
+              errorPatternInfo?.explanation ||
+              'A Playwright assertion (expect) timed out or failed. The expected element or state was not found.',
+            solution:
+              errorPatternInfo?.solution ||
+              'Check the screenshots to see the actual UI state. The element may not have appeared due to a backend error or timing issue.',
+          };
+        })(),
+      ]
+    : [];
+
+  // Sort by timestamp
+  const issues = [
+    ...consoleIssues,
+    ...pageErrorIssues,
+    ...testOutputIssues,
+    ...errorContextIssues,
+  ].sort((a, b) => a.timestamp - b.timestamp);
+
+  // Deduplicate issues (same category within 1 second)
+  const uniqueIssues = issues.reduce<DiagnosticIssue[]>((acc, issue) => {
+    const isDuplicate = acc.some(
+      (existing) =>
+        existing.category === issue.category &&
+        Math.abs(existing.timestamp - issue.timestamp) < 1000
+    );
+
+    return isDuplicate ? acc : [...acc, issue];
+  }, []);
+
+  const byCategory = uniqueIssues.reduce<Record<string, number>>(
+    (acc, issue) => ({
+      ...acc,
+      [issue.category]: (acc[issue.category] || 0) + 1,
+    }),
+    {}
+  );
+
+  const criticalIssue = uniqueIssues.find((i) =>
+    CRITICAL_CATEGORIES.includes(i.category)
+  );
+  const primaryIssue = criticalIssue || uniqueIssues[0];
+
+  const summary =
+    uniqueIssues.length === 0
+      ? '✅ No known error patterns detected'
+      : criticalIssue
+      ? `🚨 CRITICAL ISSUES FOUND - ${uniqueIssues.length} unique error(s) detected`
+      : `⚠️  ${uniqueIssues.length} potential issue(s) detected`;
+
+  return {
+    summary,
+    issueCount: uniqueIssues.length,
+    byCategory,
+    primaryDiagnosis: primaryIssue
+      ? {
+          explanation: primaryIssue.explanation,
+          recommendation: primaryIssue.solution,
+        }
+      : {
+          explanation: 'No known error patterns were detected in the trace.',
+          recommendation:
+            "Trace looks clean. If the test still fails, check the app's own logs.",
+        },
+    issues: uniqueIssues.slice(0, 10).map((issue) => ({
+      category: issue.category,
+      timestamp: issue.timestamp,
+      source: issue.source,
+      explanation: issue.explanation,
+      solution: issue.solution,
+      // Truncate text for readability
+      snippet:
+        issue.text.slice(0, 200) + (issue.text.length > 200 ? '...' : ''),
+    })),
+  };
+}
+
+// Command: diagnose (comprehensive error scan)
+function commandDiagnose(ctx: TraceContext, patterns: ErrorPattern[]): void {
+  output('diagnose', ctx.tracePath, getDiagnoseResults(ctx, { patterns }));
 }
 
 // Command: timeline
@@ -1018,10 +1405,9 @@ function commandTimeline(ctx: TraceContext): void {
 
   // Build description for an action
   const buildActionDescription = (
-    action: TraceContext["actions"][0],
+    action: TraceContext['actions'][0]
   ): string => {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- action params are untyped in trace format
-    const params = action.params as Record<string, unknown>;
+    const { params } = action;
     const parts = [action.apiName];
 
     if (params.url) {
@@ -1042,37 +1428,37 @@ function commandTimeline(ctx: TraceContext): void {
   // Build all events using functional composition
   const startEvent: TimelineEvent = {
     time: 0,
-    type: "start",
+    type: 'start',
     description: `Test started: ${ctx.testName}`,
   };
 
   const actionEvents: TimelineEvent[] = ctx.actions.map((action) => ({
     time: action.startTime,
-    type: "action",
+    type: 'action',
     description: buildActionDescription(action),
   }));
 
   const consoleErrorEvents: TimelineEvent[] = ctx.consoleMessages
-    .filter((m) => m.messageType === "error")
+    .filter((m) => m.messageType === 'error')
     .map((msg) => ({
       time: msg.time,
-      type: "console.error",
+      type: 'console.error',
       description: msg.text.slice(0, 100),
     }));
 
   const pageErrorEvents: TimelineEvent[] = ctx.errors.map((error) => ({
     time: error.time,
-    type: "pageError",
-    description: error.params.error?.error.message || "Unknown error",
+    type: 'pageError',
+    description: pageErrorMessage(error) || 'Unknown error',
   }));
 
   const endEvent: TimelineEvent[] = ctx.duration
     ? [
         {
           time: ctx.duration,
-          type: "end",
+          type: 'end',
           description: `Test ${ctx.status}: ${(ctx.duration / 1000).toFixed(
-            2,
+            2
           )}s`,
         },
       ]
@@ -1087,386 +1473,16 @@ function commandTimeline(ctx: TraceContext): void {
     ...endEvent,
   ].sort((a, b) => a.time - b.time);
 
-  output("timeline", ctx.tracePath, events);
-}
-
-// Diagnose results type
-interface DiagnoseResults {
-  summary: string;
-  issueCount: number;
-  recoveredCount?: number; // Count of issues that were recovered (hidden unless verbose)
-  byCategory: Record<string, number>;
-  primaryDiagnosis: {
-    explanation: string;
-    recommendation: string;
-  };
-  issues: Array<{
-    category: string;
-    timestamp: number;
-    source: string;
-    explanation: string;
-    solution: string;
-    snippet: string;
-    recovered?: boolean; // True if this issue was recovered (only shown in verbose mode)
-  }>;
-}
-
-// Get diagnose results (shared by diagnose and diagnose-all)
-function getDiagnoseResults(
-  ctx: TraceContext,
-  options?: { verbose?: boolean },
-): DiagnoseResults {
-  const verbose = options?.verbose ?? false;
-  // Known error patterns with explanations and solutions (generic patterns only)
-  const errorPatterns: Array<{
-    pattern: RegExp;
-    category: string;
-    explanation: string;
-    solution: string;
-  }> = [
-    // Timeout errors
-    {
-      pattern: /Timed out.*waiting for/i,
-      category: "Timeout",
-      explanation:
-        "A Playwright assertion or wait timed out. The expected element/state did not appear in time.",
-      solution:
-        "Check screenshots to see actual UI state. May indicate a backend error preventing the UI from updating.",
-    },
-    // Element not found
-    {
-      pattern: /element.*not found|locator.*not found/i,
-      category: "Element Not Found",
-      explanation:
-        "The selector did not match any element in the DOM at the time of the action.",
-      solution:
-        "Verify the selector is correct and the element exists. Check if a wait is needed.",
-    },
-    // Navigation errors
-    {
-      pattern: /navigation.*failed|net::ERR_/i,
-      category: "Navigation Error",
-      explanation: "Page navigation failed due to network or server error.",
-      solution:
-        "Check if the URL is correct and the server is running. Look for network errors in console.",
-    },
-    // Console errors
-    {
-      pattern: /console\.error|Uncaught Error|Unhandled Promise/i,
-      category: "Console Error",
-      explanation: "JavaScript error logged to browser console.",
-      solution:
-        "Check the error message and stack trace to identify the source of the error.",
-    },
-    // Network errors
-    {
-      pattern: /status of 4\d\d/i,
-      category: "HTTP 4xx Error",
-      explanation: "Client error response from server (400-499).",
-      solution: "Check the specific status code and request details.",
-    },
-    {
-      pattern: /status of 5\d\d/i,
-      category: "HTTP 5xx Error",
-      explanation:
-        "Server error response (500-599). Backend crashed or unavailable.",
-      solution: "Check server logs for the actual error.",
-    },
-    {
-      pattern: /ECONNREFUSED|ETIMEDOUT/i,
-      category: "Connection Error",
-      explanation: "Failed to connect to a service (database, API, etc.).",
-      solution: "Verify all services are running and accessible.",
-    },
-    // Strict mode violations
-    {
-      pattern: /strict mode violation|multiple elements/i,
-      category: "Strict Mode Violation",
-      explanation:
-        "Selector matched multiple elements when Playwright expected exactly one.",
-      solution:
-        "Use a more specific selector to match only the intended element.",
-    },
-    // Frame issues
-    {
-      pattern: /frame.*detached|frame.*navigated/i,
-      category: "Frame Detached",
-      explanation:
-        "The frame was removed from the DOM or navigated while an action was in progress.",
-      solution:
-        "Wait for frame to be stable before interacting, or handle frame lifecycle explicitly.",
-    },
-    // Dialog handling
-    {
-      pattern: /dialog.*not handled|unexpected dialog/i,
-      category: "Unhandled Dialog",
-      explanation:
-        "A browser dialog (alert/confirm/prompt) appeared but was not handled.",
-      solution:
-        'Add page.on("dialog") handler before triggering the action that shows the dialog.',
-    },
-  ];
-
-  interface DiagnosticIssue {
-    category: string;
-    timestamp: number;
-    source: "console" | "pageError" | "testOutput";
-    text: string;
-    explanation: string;
-    solution: string;
-    recovered?: boolean;
-  }
-
-  const issues: DiagnosticIssue[] = [];
-
-  // Patterns to ignore (noise that doesn't help debugging)
-  const ignorePatterns = [
-    /sentry/i, // Sentry errors are typically not test-relevant
-    /ingest\..*sentry/i,
-  ];
-
-  const shouldIgnore = (text: string, location?: string): boolean => {
-    const combined = `${text} ${location || ""}`;
-
-    return ignorePatterns.some((pattern) => pattern.test(combined));
-  };
-
-  // Helper to find pattern info
-  const findPatternInfo = (
-    text: string,
-  ): (typeof errorPatterns)[0] | undefined =>
-    errorPatterns.find((patternInfo) => patternInfo.pattern.test(text));
-
-  // Search all console messages
-  ctx.consoleMessages.forEach((msg) => {
-    // Skip noise
-    if (shouldIgnore(msg.text, msg.location?.url)) {
-      return;
-    }
-
-    const patternInfo = findPatternInfo(msg.text);
-
-    if (patternInfo) {
-      // eslint-disable-next-line no-restricted-syntax -- building arrays imperatively for diagnostic output
-      issues.push({
-        category: patternInfo.category,
-        timestamp: msg.time,
-        source: "console",
-        text: msg.text.slice(0, 800),
-        explanation: patternInfo.explanation,
-        solution: patternInfo.solution,
-      });
-    }
-  });
-
-  // Search page errors
-  ctx.errors.forEach((error) => {
-    const errorMsg = error.params.error?.error.message || "";
-    const patternInfo = findPatternInfo(errorMsg);
-
-    if (patternInfo) {
-      // eslint-disable-next-line no-restricted-syntax -- building arrays imperatively for diagnostic output
-      issues.push({
-        category: patternInfo.category,
-        timestamp: error.time,
-        source: "pageError",
-        text: errorMsg.slice(0, 800),
-        explanation: patternInfo.explanation,
-        solution: patternInfo.solution,
-      });
-    }
-  });
-
-  // CRITICAL: Also search test.trace stdout/stderr/error for errors
-  const testTracePath = path.join(ctx.tracePath, "test.trace");
-
-  if (fs.existsSync(testTracePath)) {
-    const testTrace = parseJsonlFile<TraceEvent>(testTracePath);
-
-    testTrace.forEach((event) => {
-      // Handle stdout/stderr events
-      if (event.type === "stdout" || event.type === "stderr") {
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- stdout/stderr trace events have untyped text/timestamp fields
-        const { text, timestamp } = event as {
-          text: string;
-          timestamp: number;
-        };
-
-        const patternInfo = findPatternInfo(text);
-
-        if (patternInfo) {
-          // eslint-disable-next-line no-restricted-syntax -- building arrays imperatively for diagnostic output
-          issues.push({
-            category: patternInfo.category,
-            timestamp,
-            source: "testOutput",
-            text: text.slice(0, 800),
-            explanation: patternInfo.explanation,
-            solution: patternInfo.solution,
-          });
-        }
-      }
-
-      // Handle error events (Playwright test failures, Node.js errors)
-      if (event.type === "error") {
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- error trace events have untyped message field
-        const { message } = event as { message: string };
-
-        if (message) {
-          const patternInfo = findPatternInfo(message);
-
-          if (patternInfo) {
-            // eslint-disable-next-line no-restricted-syntax -- building arrays imperatively for diagnostic output
-            issues.push({
-              category: patternInfo.category,
-              timestamp: 0, // error events don't have timestamps
-              source: "testOutput",
-              text: message.slice(0, 800),
-              explanation: patternInfo.explanation,
-              solution: patternInfo.solution,
-            });
-          }
-        }
-      }
-    });
-  }
-
-  // Check error-context.md for test assertion failures (Playwright writes this for failed tests)
-  const errorContext = loadErrorContext(ctx.tracePath);
-
-  if (errorContext) {
-    const errorPatternInfo = findPatternInfo(errorContext.errorMessage);
-
-    // eslint-disable-next-line no-restricted-syntax -- building arrays imperatively for diagnostic output
-    issues.push({
-      category: errorPatternInfo?.category || "Test Assertion Failed",
-      timestamp: 0,
-      source: "testOutput",
-      text: errorContext.errorMessage.slice(0, 800),
-      explanation:
-        errorPatternInfo?.explanation ||
-        "A Playwright assertion (expect) timed out or failed. The expected element or state was not found.",
-      solution:
-        errorPatternInfo?.solution ||
-        "Check the screenshots to see the actual UI state. The element may not have appeared due to a backend error or timing issue.",
-    });
-  }
-
-  // Sort by timestamp
-  issues.sort((a, b) => a.timestamp - b.timestamp);
-
-  // Deduplicate issues (same category + similar text within 1 second)
-  const uniqueIssues = issues.reduce<DiagnosticIssue[]>((acc, issue) => {
-    const isDuplicate = acc.some(
-      (existing) =>
-        existing.category === issue.category &&
-        Math.abs(existing.timestamp - issue.timestamp) < 1000,
-    );
-
-    return isDuplicate ? acc : [...acc, issue];
-  }, []);
-
-  // Separate recovered issues from non-recovered issues
-  const recoveredIssues = uniqueIssues.filter((issue) => issue.recovered);
-  const nonRecoveredIssues = uniqueIssues.filter((issue) => !issue.recovered);
-  const activeIssues = verbose ? uniqueIssues : nonRecoveredIssues;
-
-  // Group by category for summary
-  const byCategory: Record<string, number> = {};
-
-  nonRecoveredIssues.forEach((issue) => {
-    byCategory[issue.category] = (byCategory[issue.category] || 0) + 1;
-  });
-
-  // Determine severity
-  const hasCritical =
-    byCategory["Test Assertion Failed"] || byCategory["HTTP 5xx Error"];
-
-  // Build primary recommendation based on most critical active issue
-  const { primaryRecommendation, primaryExplanation } = (() => {
-    if (activeIssues.length === 0) {
-      const recoveryNote =
-        recoveredIssues.length > 0
-          ? ` (${recoveredIssues.length} recovered issue(s) hidden, use --verbose to see)`
-          : "";
-
-      return {
-        primaryRecommendation: `Trace looks clean.${recoveryNote} If test still fails, check server logs.`,
-        primaryExplanation:
-          "No known error patterns were detected in the trace.",
-      };
-    }
-
-    const criticalIssue = activeIssues.find(
-      (i) =>
-        !i.recovered &&
-        (i.category === "Test Assertion Failed" ||
-          i.category === "HTTP 5xx Error"),
-    );
-    const primaryIssue = criticalIssue || activeIssues[0];
-
-    return {
-      primaryRecommendation: primaryIssue?.solution || "",
-      primaryExplanation: primaryIssue?.explanation || "",
-    };
-  })();
-
-  // Build summary message
-  const recoveryNote =
-    recoveredIssues.length > 0
-      ? verbose
-        ? ` (+${recoveredIssues.length} recovered)`
-        : ` (${recoveredIssues.length} recovered issue(s) hidden)`
-      : "";
-
-  const summary =
-    nonRecoveredIssues.length === 0
-      ? `✅ No known error patterns detected${recoveryNote}`
-      : hasCritical
-        ? `🚨 CRITICAL ISSUES FOUND - ${nonRecoveredIssues.length} unique error(s) detected${recoveryNote}`
-        : `⚠️  ${nonRecoveredIssues.length} potential issue(s) detected${recoveryNote}`;
-
-  const results: DiagnoseResults = {
-    summary,
-    issueCount: nonRecoveredIssues.length,
-    recoveredCount:
-      recoveredIssues.length > 0 ? recoveredIssues.length : undefined,
-    byCategory,
-    primaryDiagnosis: {
-      explanation: primaryExplanation,
-      recommendation: primaryRecommendation,
-    },
-    issues: activeIssues.slice(0, 10).map((issue) => ({
-      category: issue.category,
-      timestamp: issue.timestamp,
-      source: issue.source,
-      explanation: issue.explanation,
-      solution: issue.solution,
-      snippet:
-        issue.text.slice(0, 200) + (issue.text.length > 200 ? "..." : ""),
-      recovered: issue.recovered,
-    })),
-  };
-
-  return results;
-}
-
-// Command: diagnose (comprehensive error scan)
-function commandDiagnose(
-  ctx: TraceContext,
-  options: Record<string, string | boolean | number>,
-): void {
-  const verbose = options.verbose === true;
-  const results = getDiagnoseResults(ctx, { verbose });
-  output("diagnose", ctx.tracePath, results);
+  output('timeline', ctx.tracePath, events);
 }
 
 // Command: diagnose-all (diagnose all traces in test-results)
 function commandDiagnoseAll(
   options: Record<string, string | boolean | number>,
+  patterns: ErrorPattern[]
 ): void {
   if (!fs.existsSync(getTestResultsDir())) {
-    console.log(JSON.stringify({ error: "No test-results directory found" }));
+    console.log(JSON.stringify({ error: 'No test-results directory found' }));
 
     return;
   }
@@ -1477,7 +1493,7 @@ function commandDiagnoseAll(
   // Find all trace.zip files
   const traces = dirs
     .map((dir) => {
-      const traceZip = path.join(getTestResultsDir(), dir, "trace.zip");
+      const traceZip = path.join(getTestResultsDir(), dir, 'trace.zip');
 
       return fs.existsSync(traceZip)
         ? { testName: dir, tracePath: traceZip }
@@ -1485,12 +1501,12 @@ function commandDiagnoseAll(
     })
     .filter(
       (trace): trace is { testName: string; tracePath: string } =>
-        trace !== null,
+        trace !== null
     );
 
   if (traces.length === 0) {
     console.log(
-      JSON.stringify({ error: "No trace.zip files found in test-results/" }),
+      JSON.stringify({ error: 'No trace.zip files found in test-results/' })
     );
 
     return;
@@ -1503,7 +1519,7 @@ function commandDiagnoseAll(
     try {
       const traceDir = getTraceDir(tracePath);
       const ctx = parseTrace(traceDir);
-      const results = getDiagnoseResults(ctx, { verbose });
+      const results = getDiagnoseResults(ctx, { patterns });
 
       // Skip traces with no issues unless --verbose flag is set
       if (!verbose && results.issueCount === 0) {
@@ -1511,7 +1527,7 @@ function commandDiagnoseAll(
       }
 
       console.log(`\n━━━ ${testName} ━━━`);
-      output("diagnose", ctx.tracePath, results);
+      output('diagnose', ctx.tracePath, results);
 
       return count;
     } catch (error) {
@@ -1525,10 +1541,23 @@ function commandDiagnoseAll(
 
   if (skippedCount > 0) {
     console.log(
-      `\n✅ ${skippedCount} trace(s) with no issues (use --verbose to show)`,
+      `\n✅ ${skippedCount} trace(s) with no issues (use --verbose to show)`
     );
   }
 }
+
+export const TRACE_COMMANDS = [
+  'summary',
+  'errors',
+  'actions',
+  'screenshots',
+  'screenshot',
+  'console',
+  'around',
+  'timeline',
+  'diagnose',
+  'diagnose-all',
+] as const;
 
 /**
  * Run a trace command with the given options.
@@ -1538,11 +1567,12 @@ export async function runTraceCommand(
   command: string,
   tracePath: string | undefined,
   options: Record<string, string | boolean | number>,
+  patterns: ErrorPattern[] = DEFAULT_ERROR_PATTERNS
 ): Promise<void> {
   try {
     // Handle diagnose-all specially (it finds its own traces)
-    if (command === "diagnose-all") {
-      commandDiagnoseAll(options);
+    if (command === 'diagnose-all') {
+      commandDiagnoseAll(options, patterns);
 
       return;
     }
@@ -1555,51 +1585,56 @@ export async function runTraceCommand(
 
     // Execute command
     switch (command) {
-      case "summary":
+      case 'summary':
         commandSummary(ctx);
 
         break;
-      case "errors":
+      case 'errors':
         commandErrors(ctx);
 
         break;
-      case "actions":
+      case 'actions':
         commandActions(ctx);
 
         break;
-      case "screenshots":
+      case 'screenshots':
         commandScreenshots(ctx);
 
         break;
-      case "screenshot":
+      case 'screenshot':
         commandScreenshot(ctx, options);
 
         break;
-      case "console":
+      case 'console':
         commandConsole(ctx, options);
 
         break;
-      case "around":
+      case 'around':
         commandAround(ctx, options);
 
         break;
-      case "timeline":
+      case 'timeline':
         commandTimeline(ctx);
 
         break;
-      case "diagnose":
-        commandDiagnose(ctx, options);
+      case 'diagnose':
+        commandDiagnose(ctx, patterns);
 
         break;
       default:
         console.error(`Unknown command: ${command}`);
-        console.error(
-          "Available commands: summary, errors, actions, screenshots, screenshot, console, around, timeline, diagnose, diagnose-all",
-        );
+        console.error(`Available commands: ${TRACE_COMMANDS.join(', ')}`);
         process.exit(1);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
+    // Opt-in full stack for diagnosing trace-parser crashes (the plain
+    // `{ error: message }` alone hides where a bad trace event blew up).
+    if (process.env.LAMBDA_TRACE_DEBUG === '1' && error instanceof Error) {
+      console.error(error.stack);
+    }
+
     console.error(JSON.stringify({ error: message }));
     process.exit(1);
   }

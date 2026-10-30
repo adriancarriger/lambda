@@ -1,90 +1,251 @@
-#!/usr/bin/env node
-import { Command } from "commander";
+/**
+ * The lambda command line.
+ *
+ * Dispatch decides before commander parses: a built-in runs through
+ * commander; a drop-in is loaded and registered first; a lambda.json command
+ * runs through the shell; anything else goes to the project's own CLI with
+ * its argv untouched, so commander never eats that CLI's flags.
+ */
+import { Command } from 'commander';
 
-import { registerAgentCommand } from "./commands/agent";
-import { registerAwaitCommand } from "./commands/await";
-import { registerConnectCommand } from "./commands/connect";
-import { registerE2ECommand } from "./commands/e2e";
-import { registerShipCommand } from "./commands/ship";
-import { registerStartCommand } from "./commands/start";
-import { registerStopCommand } from "./commands/stop";
-import { registerTasksCommand } from "./commands/tasks";
-import { registerTmuxCommand } from "./commands/tmux";
-import { registerTraceCommand } from "./commands/trace";
+import { registerShipCommand } from './building/ship';
+import { registerAccountCommand } from './commands/account';
+import { registerAgentCommand } from './commands/agent';
+import { registerAwaitCommand } from './commands/await';
+import { registerBuildingCommand } from './commands/building';
+import { registerComputerCommand } from './commands/computer';
+import { registerConnectCommand } from './commands/connect';
+import { registerDesignCommand } from './commands/design';
+import { registerDoctorCommand } from './commands/doctor';
+import { registerE2ECommand, runCommandTemplate } from './commands/e2e';
+import { registerEventCommand } from './commands/event';
+import { registerInitCommand } from './commands/init';
+import { registerInternalCommand } from './commands/internal';
+import {
+  registerJoinCommand,
+  registerLeaveCommand,
+  registerStatusCommand,
+} from './commands/join';
+import { registerOpenCommand } from './commands/open';
+import { registerPlanningCommand } from './commands/planning';
+import { registerShotCommand } from './commands/shot';
+import { registerStartCommand, registerStopCommand } from './commands/start';
+import { registerTicketsCommand } from './commands/tickets';
+import { registerTmuxCommand } from './commands/tmux';
+import { registerTraceCommand } from './commands/trace';
+import { registerUpgradeCommand } from './commands/upgrade';
+import { loadMachineConfig } from './config/machineConfig';
+import { type Project, loadProjectConfig } from './config/projectConfig';
+import { forwardToProjectCli } from './dispatch/forward';
+import {
+  BUILT_IN_COMMANDS,
+  loadDropIn,
+  refusedMessage,
+  resolveCommand,
+  unavailableMessage,
+} from './dispatch/resolve';
+import { registerKnowledgeCommand, registerPodCommand } from './pod';
+import { registerVerdictCommand } from './verdict';
 
-import chalk from "chalk";
+export const VERSION = '0.2.0';
 
-const program = new Command();
+const REGISTER: Record<string, (program: Command) => void> = {
+  init: registerInitCommand,
+  doctor: registerDoctorCommand,
+  tmux: registerTmuxCommand,
+  await: registerAwaitCommand,
+  agent: registerAgentCommand,
+  e2e: registerE2ECommand,
+  trace: (program) => registerTraceCommand(program),
+  tickets: (program) => registerTicketsCommand(program),
+  planning: registerPlanningCommand,
+  building: registerBuildingCommand,
+  pod: registerPodCommand,
+  knowledge: registerKnowledgeCommand,
+  start: registerStartCommand,
+  stop: registerStopCommand,
+  open: registerOpenCommand,
+  join: registerJoinCommand,
+  leave: registerLeaveCommand,
+  status: registerStatusCommand,
+  computer: registerComputerCommand,
+  event: registerEventCommand,
+  account: registerAccountCommand,
+  verdict: (program) => registerVerdictCommand(program),
+  ship: (program) => registerShipCommand(program),
+  design: registerDesignCommand,
+  shot: (program) => registerShotCommand(program),
+  connect: registerConnectCommand,
+  upgrade: registerUpgradeCommand,
+  internal: registerInternalCommand,
+};
 
-program
-  .name("lambda")
-  .description("Lambda CLI - Multi-agent development orchestration")
-  .version("0.1.0");
+export const HELP_TEXT = [
+  'Usage: lambda <command> [options]',
+  '',
+  'Commands:',
+  ...BUILT_IN_COMMANDS.map(
+    (command) => `  ${command.name.padEnd(9)} ${command.description}`
+  ),
+  '',
+  "Anything else runs your project's CLI (see lambda doctor).",
+  '',
+].join('\n');
 
-// Register commands
-registerAgentCommand(program);
-registerAwaitCommand(program);
-registerConnectCommand(program);
-registerE2ECommand(program);
-registerShipCommand(program);
-registerStartCommand(program);
-registerStopCommand(program);
-registerTasksCommand(program);
-registerTmuxCommand(program);
-registerTraceCommand(program);
+/**
+ * The program with every built-in command, except any in `omit` (a drop-in
+ * takes that name instead).
+ */
+export const createProgram = (options: { omit?: string[] } = {}): Command => {
+  const program = new Command();
+  program
+    .name('lambda')
+    .usage('<command> [options]')
+    .version(VERSION, '-V, --version');
 
-// Add help text with examples
-program.on("--help", () => {
-  console.log("");
-  console.log(chalk.bold("Commands:"));
-  console.log("");
-  console.log("  agent       AI agent management (context compaction)");
-  console.log("  await       Block until pane is done (for delegated waiting)");
-  console.log("  connect     Attach to an existing Lambda session");
-  console.log("  e2e         Run E2E tests");
-  console.log("  ship        Create branch, commit, push, and open PR");
-  console.log("  start       Create tmux session and launch Claude agents");
-  console.log("  stop        Kill the lambda tmux session");
-  console.log("  tasks       Manage project tasks from TASKS.md");
-  console.log("  tmux        Send commands to or read output from tmux panes");
-  console.log("  trace       Debug Playwright E2E test traces");
+  BUILT_IN_COMMANDS.filter(
+    (command) => !(options.omit ?? []).includes(command.name)
+  ).forEach((command) => REGISTER[command.name]?.(program));
 
-  console.log("");
-  console.log(chalk.bold("Examples:"));
-  console.log("");
-  console.log("  Session management:");
-  console.log(
-    "    $ lambda start                    Create session + launch agents",
-  );
-  console.log("    $ lambda stop                     Kill session");
-  console.log("");
-  console.log("  Tmux pane interaction:");
-  console.log('    $ lambda tmux scratchPad "echo hi" Send command + Enter');
-  console.log("    $ lambda tmux scratchPad           Capture current output");
-  console.log("    $ lambda tmux john C-c             Send Ctrl+C");
-  console.log('    $ lambda tmux john wait "pattern"  Wait for pattern');
-  console.log("");
-  console.log("  Task management:");
-  console.log("    $ lambda tasks list                Show all tasks");
-  console.log("    $ lambda tasks next                Get next task ID");
-  console.log("    $ lambda tasks show DEMO-1         Print ticket spec");
-  console.log("    $ lambda tasks done DEMO-1         Mark task as done");
-  console.log("");
-  console.log("  E2E trace debugging:");
-  console.log("    $ lambda trace diagnose-all");
-  console.log("    $ lambda trace summary");
-  console.log("    $ lambda trace errors test-results/some-test/trace.zip");
-  console.log("");
-  console.log("  Ship (branch, commit, PR):");
-  console.log(
-    "    $ lambda ship DEMO-1               Create branch, commit, push, PR",
-  );
-  console.log("");
-  console.log("  Agent context management:");
-  console.log("    $ lambda agent compact -w lambda:john");
-  console.log("    $ lambda agent whoami");
-  console.log("");
-  console.log(chalk.gray("For command-specific help: lambda <command> --help"));
-});
+  // Set after the commands are added, so their own help keeps the default.
+  program.configureHelp({ formatHelp: () => HELP_TEXT });
 
-program.parse();
+  return program;
+};
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const exitCode = (): number => Number(process.exitCode ?? 0);
+
+/**
+ * The only first arguments lambda's own parser sees besides its commands.
+ * Anything else (`help`, `-x`) goes to the project CLI untouched.
+ */
+const LAMBDA_FLAGS = ['--help', '--version'];
+
+/**
+ * Commands that run without the settings files, or survive bad ones: init
+ * writes them, and doctor shows what's wrong with them.
+ */
+const READS_NO_SETTINGS = ['init', 'doctor'];
+
+/**
+ * Read and validate both settings files before dispatching. Every other
+ * command fails on a bad one (`<path>: <field> <problem>`, exit 1) up front, rather
+ * than partway through, whichever of them it ends up reading.
+ */
+const loadSettings = (
+  name: string
+): { project: Project | null } | { error: string } => {
+  try {
+    const project = loadProjectConfig(process.cwd());
+    loadMachineConfig();
+
+    return { project };
+  } catch (error) {
+    return READS_NO_SETTINGS.includes(name)
+      ? { project: safeProject() }
+      : { error: errorMessage(error) };
+  }
+};
+
+/** The project, or null when its lambda.json can't be read (init, doctor). */
+const safeProject = (): Project | null => {
+  try {
+    return loadProjectConfig(process.cwd());
+  } catch {
+    return null;
+  }
+};
+
+const parse = async (program: Command, argv: string[]): Promise<number> => {
+  await program.parseAsync(argv);
+
+  return exitCode();
+};
+
+/**
+ * Run `lambda` with a full argv (`[node, script, ...args]`) and resolve with
+ * the exit code. Errors are printed to stderr.
+ */
+export const run = async (argv: string[] = process.argv): Promise<number> => {
+  const args = argv.slice(2);
+  const [name] = args;
+
+  try {
+    if (name === undefined || LAMBDA_FLAGS.includes(name)) {
+      return await parse(createProgram(), argv);
+    }
+
+    const loaded = loadSettings(name);
+
+    if ('error' in loaded) {
+      console.error(loaded.error);
+
+      return 1;
+    }
+
+    const { project } = loaded;
+    const resolution = resolveCommand(name, project);
+
+    switch (resolution.kind) {
+      case 'built-in':
+        return await parse(createProgram(), argv);
+      case 'refused':
+        // doctor is how a refused drop-in gets seen, so it still runs (and
+        // lists itself as a refused drop-in); every other core name stops.
+        if (name === 'doctor') {
+          return await parse(createProgram(), argv);
+        }
+
+        console.error(refusedMessage(resolution.file, name));
+
+        return 1;
+      case 'unavailable':
+        console.error(unavailableMessage(name));
+
+        return 1;
+      case 'drop-in': {
+        if (project === null) {
+          throw new Error(`No project for drop-in ${resolution.file}`);
+        }
+
+        const register = await loadDropIn(project, resolution.file);
+        const program = createProgram({ omit: [name] });
+        register(program);
+
+        return await parse(program, argv);
+      }
+      case 'config': {
+        if (project === null) {
+          throw new Error(`No project for lambda.json ${resolution.key}`);
+        }
+
+        return await runCommandTemplate(
+          resolution.command,
+          args.slice(1),
+          project.root
+        );
+      }
+      case 'project-cli':
+      case 'unknown': {
+        const result = await forwardToProjectCli({
+          args,
+          project,
+          runningBinary: argv[1],
+        });
+
+        if (result.message !== undefined) {
+          console.error(result.message);
+        }
+
+        return result.code;
+      }
+    }
+  } catch (error) {
+    console.error(errorMessage(error));
+
+    return 1;
+  }
+};

@@ -5,11 +5,13 @@
  * as the first prompt in the fresh session.
  *
  * Usage:
- *   lambda agent clear --self "Start section 3.2: billing.spec.ts. Events test was a timing issue."
+ *   lambda agent clear --self "Start section 3.2: trail-map.spec.ts. The legend test was a timing issue."
  *
  * Must be called directly (not via tmux) so TMUX_PANE is available.
  */
-import { execSync } from "child_process";
+import { execSync } from 'child_process';
+
+import { isScratchWindow } from './windows';
 
 const MAX_WAIT_MS = 30000;
 const POLL_INTERVAL_MS = 1000;
@@ -26,10 +28,10 @@ async function waitForClear(target: string): Promise<boolean> {
   while (Date.now() - startTime < MAX_WAIT_MS) {
     try {
       const output = execSync(`tmux capture-pane -t ${target} -p -S -5`, {
-        encoding: "utf-8",
+        encoding: 'utf-8',
       });
 
-      if (output.includes("accept edits on")) {
+      if (output.includes('auto mode on')) {
         return true;
       }
     } catch {
@@ -37,7 +39,7 @@ async function waitForClear(target: string): Promise<boolean> {
     }
 
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    process.stdout.write(".");
+    process.stdout.write('.');
   }
 
   return false;
@@ -50,33 +52,34 @@ function resolveOwnWindow(): string {
   const tmuxPane = process.env.TMUX_PANE;
 
   if (!tmuxPane) {
-    console.error("Error: Not running in tmux. --self requires TMUX_PANE.");
+    console.error('Error: Not running in tmux. --self requires TMUX_PANE.');
     process.exit(1);
   }
 
   return execSync(
     `tmux display-message -t "${tmuxPane}" -p '#{session_name}:#{window_name}'`,
-    { encoding: "utf-8" },
+    { encoding: 'utf-8' }
   ).trim();
 }
 
 export async function runClear(selfMessage: string): Promise<void> {
   try {
     const target = resolveOwnWindow();
-    const [, windowName] = target.split(":");
+    const [, windowName] = target.split(':');
 
-    if (windowName === "scratchPad" || windowName === "scratchPad2") {
-      console.error("Error: Cannot clear scratchPad windows.");
+    // Never a scratch window: those are the project's shells
+    if (isScratchWindow(windowName)) {
+      console.error('Error: Cannot clear scratch windows.');
       process.exit(1);
     }
 
     console.log(`Clearing: ${target}`);
     console.log(
       `Handoff: ${selfMessage.slice(0, 80)}${
-        selfMessage.length > 80 ? "..." : ""
-      }`,
+        selfMessage.length > 80 ? '...' : ''
+      }`
     );
-    console.log("");
+    console.log('');
 
     // Send /clear and confirm autocomplete
     execSync(`tmux send-keys -t ${target} '/clear' C-m`);
@@ -87,8 +90,8 @@ export async function runClear(selfMessage: string): Promise<void> {
     const completed = await waitForClear(target);
 
     if (!completed) {
-      console.log("");
-      console.error("Warning: Timed out waiting for /clear to complete.");
+      console.log('');
+      console.error('Warning: Timed out waiting for /clear to complete.');
     }
 
     // Send the handoff message as a user prompt
@@ -96,11 +99,11 @@ export async function runClear(selfMessage: string): Promise<void> {
     const escapedMessage = selfMessage.replace(/'/g, "'\\''");
     execSync(`tmux send-keys -t ${target} '${escapedMessage}' C-m`);
 
-    console.log("Context cleared. Handoff sent.");
+    console.log('Context cleared. Handoff sent.');
   } catch (error) {
     console.error(
-      "Error:",
-      error instanceof Error ? error.message : "Unknown error",
+      'Error:',
+      error instanceof Error ? error.message : 'Unknown error'
     );
     process.exit(1);
   }

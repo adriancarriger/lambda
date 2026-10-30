@@ -1,10 +1,8 @@
-.DS_Store
 node_modules/
 dist/
-.next/
-test-results/
-playwright-report/
-.env*
-*.local.json
-.shutdown_confirmed
-.ralph-stop-log
+.eslintcache
+# The Mac app's build output and what build:mac fetches.
+desktop/release/
+desktop/tools/out/
+desktop/tools/.work/
+desktop/kokoro/node_modules/

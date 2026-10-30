@@ -1,178 +1,255 @@
 /**
- * TypeScript types for Playwright trace file events.
- * These types represent the JSONL events found in trace files.
+ * Types for Playwright trace file events, the JSONL lines found in trace files.
+ * Each event the reader uses has a zod schema, so a line is parsed, not cast:
+ * `TraceEventSchema` keeps the events it knows and drops the rest. Schemas pass
+ * unknown fields through, since Playwright adds fields between versions.
  */
+import { z } from 'zod';
 
-// Base event with discriminator
-export type TraceEvent =
-  | ContextOptionsEvent
-  | BeforeEvent
-  | AfterEvent
-  | ScreencastFrameEvent
-  | ConsoleEvent
-  | LogEvent
-  | BrowserEvent
-  | InputEvent
-  | FrameSnapshotEvent
-  | StdoutEvent
-  | StderrEvent
-  | TestErrorEvent;
+const StackFrameSchema = z.object({
+  file: z.string(),
+  line: z.number(),
+  column: z.number(),
+  function: z.string().optional(),
+});
 
 // Context options (first line of trace)
-export interface ContextOptionsEvent {
-  type: "context-options";
-  version: number;
-  origin: "testRunner" | "library";
-  browserName: string;
-  platform: string;
-  wallTime: number;
-  monotonicTime: number;
-  sdkLanguage: string;
-  title?: string;
-  contextId?: string;
-  testIdAttributeName?: string;
-  options?: {
-    viewport?: { width: number; height: number };
-    baseURL?: string;
-    userAgent?: string;
-    isMobile?: boolean;
-    [key: string]: unknown;
-  };
-}
+export const ContextOptionsEventSchema = z
+  .object({
+    type: z.literal('context-options'),
+    version: z.number().optional(),
+    origin: z.string().optional(),
+    browserName: z.string().optional(),
+    platform: z.string().optional(),
+    wallTime: z.number().optional(),
+    monotonicTime: z.number().optional(),
+    sdkLanguage: z.string().optional(),
+    title: z.string().optional(), // Test title (in library origin)
+    contextId: z.string().optional(),
+    testIdAttributeName: z.string().optional(),
+    options: z
+      .object({
+        viewport: z
+          .object({ width: z.number(), height: z.number() })
+          .optional(),
+        baseURL: z.string().optional(),
+        userAgent: z.string().optional(),
+        isMobile: z.boolean().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
 
 // Before event - action starting
-export interface BeforeEvent {
-  type: "before";
-  callId: string;
-  startTime: number;
-  apiName: string;
-  class: string;
-  method: string;
-  params: Record<string, unknown>;
-  stepId?: string;
-  pageId?: string;
-  parentId?: string;
-  beforeSnapshot?: string;
-  stack?: StackFrame[];
-}
+export const BeforeEventSchema = z
+  .object({
+    type: z.literal('before'),
+    callId: z.string(),
+    startTime: z.number(),
+    // Legacy Playwright traces carry a single `apiName` (e.g. "locator.click").
+    // Newer traces drop it in favour of `class` + `method` (+ a human `title`).
+    apiName: z.string().optional(),
+    title: z.string().optional(),
+    class: z.string(),
+    method: z.string(),
+    params: z.record(z.unknown()).default({}),
+    stepId: z.string().optional(),
+    pageId: z.string().optional(),
+    parentId: z.string().optional(),
+    beforeSnapshot: z.string().optional(),
+    stack: z.array(StackFrameSchema).optional(),
+  })
+  .passthrough();
 
 // After event - action completed
-export interface AfterEvent {
-  type: "after";
-  callId: string;
-  endTime: number;
-  result?: Record<string, unknown>;
-  error?: { message: string; stack?: string };
-  afterSnapshot?: string;
-  annotations?: unknown[];
-}
+export const AfterEventSchema = z
+  .object({
+    type: z.literal('after'),
+    callId: z.string(),
+    endTime: z.number(),
+    result: z.record(z.unknown()).optional(),
+    error: z
+      .object({ message: z.string(), stack: z.string().optional() })
+      .passthrough()
+      .optional(),
+    afterSnapshot: z.string().optional(),
+    annotations: z.array(z.unknown()).optional(),
+  })
+  .passthrough();
 
 // Screenshot frame
-export interface ScreencastFrameEvent {
-  type: "screencast-frame";
-  pageId: string;
-  sha1: string;
-  width: number;
-  height: number;
-  timestamp: number;
-  frameSwapWallTime: number;
-}
+export const ScreencastFrameEventSchema = z
+  .object({
+    type: z.literal('screencast-frame'),
+    pageId: z.string(),
+    sha1: z.string(), // Filename in resources/
+    width: z.number(),
+    height: z.number(),
+    timestamp: z.number(), // Monotonic time
+    frameSwapWallTime: z.number().optional(),
+  })
+  .passthrough();
 
 // Console message
-export interface ConsoleEvent {
-  type: "console";
-  messageType: "log" | "info" | "warning" | "error" | "debug";
-  text: string;
-  args?: Array<{ preview?: string; value: unknown }>;
-  location?: {
-    url: string;
-    lineNumber: number;
-    columnNumber: number;
-  };
-  time: number;
-  pageId: string;
-}
+export const ConsoleEventSchema = z
+  .object({
+    type: z.literal('console'),
+    /** log, info, warning, error, debug, and any other kind the browser sends. */
+    messageType: z.string(),
+    text: z.string(),
+    args: z
+      .array(z.object({ preview: z.string().optional(), value: z.unknown() }))
+      .optional(),
+    location: z
+      .object({
+        url: z.string(),
+        lineNumber: z.number(),
+        columnNumber: z.number(),
+      })
+      .optional(),
+    time: z.number(),
+    pageId: z.string().optional(),
+  })
+  .passthrough();
 
 // Playwright log message
-export interface LogEvent {
-  type: "log";
-  callId: string;
-  time: number;
-  message: string;
-}
+export const LogEventSchema = z
+  .object({
+    type: z.literal('log'),
+    callId: z.string(),
+    time: z.number(),
+    message: z.string(),
+  })
+  .passthrough();
 
 // Browser event (includes page errors)
-export interface BrowserEvent {
-  type: "event";
-  time: number;
-  class: string;
-  method: string;
-  params: {
-    error?: {
-      error: {
-        message: string;
-        stack?: string;
-        name?: string;
-      };
-    };
-    pageId?: string;
-    [key: string]: unknown;
-  };
-  pageId?: string;
-}
+export const BrowserEventSchema = z
+  .object({
+    type: z.literal('event'),
+    time: z.number(),
+    class: z.string(),
+    method: z.string(), // 'pageError', 'page', etc.
+    params: z
+      .object({
+        // Playwright serializes a thrown Error as `{ error: {…} }` and any
+        // other thrown value (`throw 'boom'`) as `{ value }`.
+        error: z
+          .object({
+            error: z
+              .object({
+                message: z.string(),
+                stack: z.string().optional(),
+                name: z.string().optional(),
+              })
+              .passthrough()
+              .optional(),
+            value: z.unknown().optional(),
+          })
+          .passthrough()
+          .optional(),
+        pageId: z.string().optional(),
+      })
+      .passthrough()
+      .default({}),
+    pageId: z.string().optional(),
+  })
+  .passthrough();
+
+/** A page error's message: the Error's own, else the thrown value as text. */
+export const pageErrorMessage = (event: BrowserEvent): string | undefined => {
+  const thrown = event.params.error;
+
+  if (thrown === undefined) {
+    return undefined;
+  }
+
+  if (thrown.error !== undefined) {
+    return thrown.error.message;
+  }
+
+  if (thrown.value === undefined) {
+    return undefined;
+  }
+
+  return typeof thrown.value === 'string'
+    ? thrown.value
+    : JSON.stringify(thrown.value);
+};
 
 // Input event (click/type coordinates)
-export interface InputEvent {
-  type: "input";
-  callId: string;
-  point?: { x: number; y: number };
-  inputSnapshot?: string;
-}
+export const InputEventSchema = z
+  .object({
+    type: z.literal('input'),
+    callId: z.string(),
+    point: z.object({ x: z.number(), y: z.number() }).optional(),
+    inputSnapshot: z.string().optional(),
+  })
+  .passthrough();
 
-// Frame snapshot (DOM state)
-export interface FrameSnapshotEvent {
-  type: "frame-snapshot";
-  snapshot: {
-    callId: string;
-    snapshotName: string;
-    pageId: string;
-    frameId: string;
-    frameUrl: string;
-    html: unknown;
-    viewport: { width: number; height: number };
-    timestamp: number;
-    wallTime: number;
-    collectionTime: number;
-    resourceOverrides: unknown[];
-    isMainFrame: boolean;
-  };
-}
+// Frame snapshot (DOM state); the reader never looks inside it.
+export const FrameSnapshotEventSchema = z
+  .object({
+    type: z.literal('frame-snapshot'),
+    snapshot: z.record(z.unknown()),
+  })
+  .passthrough();
 
 // Stdout from test runner
-export interface StdoutEvent {
-  type: "stdout";
-  timestamp: number;
-  text: string;
-}
+export const StdoutEventSchema = z
+  .object({
+    type: z.literal('stdout'),
+    timestamp: z.number(),
+    text: z.string().default(''),
+  })
+  .passthrough();
 
 // Stderr from test runner
-export interface StderrEvent {
-  type: "stderr";
-  timestamp: number;
-  text: string;
-}
+export const StderrEventSchema = z
+  .object({
+    type: z.literal('stderr'),
+    timestamp: z.number(),
+    text: z.string().default(''),
+  })
+  .passthrough();
 
-// Test error event
-export interface TestErrorEvent {
-  type: "error";
-  message: string;
-  stack?: Array<{
-    file: string;
-    line: number;
-    column: number;
-    function?: string;
-  }>;
-}
+// Test error event (Playwright test failures, Node.js errors in test code)
+export const TestErrorEventSchema = z
+  .object({
+    type: z.literal('error'),
+    message: z.string().default(''),
+    stack: z.array(StackFrameSchema).optional(),
+  })
+  .passthrough();
+
+export const TraceEventSchema = z.discriminatedUnion('type', [
+  ContextOptionsEventSchema,
+  BeforeEventSchema,
+  AfterEventSchema,
+  ScreencastFrameEventSchema,
+  ConsoleEventSchema,
+  LogEventSchema,
+  BrowserEventSchema,
+  InputEventSchema,
+  FrameSnapshotEventSchema,
+  StdoutEventSchema,
+  StderrEventSchema,
+  TestErrorEventSchema,
+]);
+
+export type ContextOptionsEvent = z.infer<typeof ContextOptionsEventSchema>;
+export type BeforeEvent = z.infer<typeof BeforeEventSchema>;
+export type AfterEvent = z.infer<typeof AfterEventSchema>;
+export type ScreencastFrameEvent = z.infer<typeof ScreencastFrameEventSchema>;
+export type ConsoleEvent = z.infer<typeof ConsoleEventSchema>;
+export type LogEvent = z.infer<typeof LogEventSchema>;
+export type BrowserEvent = z.infer<typeof BrowserEventSchema>;
+export type InputEvent = z.infer<typeof InputEventSchema>;
+export type FrameSnapshotEvent = z.infer<typeof FrameSnapshotEventSchema>;
+export type StdoutEvent = z.infer<typeof StdoutEventSchema>;
+export type StderrEvent = z.infer<typeof StderrEventSchema>;
+export type TestErrorEvent = z.infer<typeof TestErrorEventSchema>;
+export type TraceEvent = z.infer<typeof TraceEventSchema>;
 
 // Stack frame from stacks file
 export interface StackFrame {
@@ -188,12 +265,54 @@ export interface StacksFile {
   stacks: Array<[number, Array<[number, number, number, string]>]>;
 }
 
+// Network resource snapshot
+export interface ResourceSnapshot {
+  type: 'resource-snapshot';
+  snapshot: {
+    _frameref: string;
+    _monotonicTime: number;
+    startedDateTime: string;
+    time: number;
+    request: {
+      method: string;
+      url: string;
+      httpVersion: string;
+      headers: Array<{ name: string; value: string }>;
+      queryString: Array<{ name: string; value: string }>;
+      headersSize: number;
+      bodySize: number;
+    };
+    response: {
+      status: number;
+      statusText: string;
+      httpVersion: string;
+      headers: Array<{ name: string; value: string }>;
+      content: {
+        size: number;
+        mimeType: string;
+        _sha1?: string;
+      };
+      headersSize: number;
+      bodySize: number;
+    };
+    timings: {
+      dns: number;
+      connect: number;
+      ssl: number;
+      send: number;
+      wait: number;
+      receive: number;
+    };
+    pageref: string;
+  };
+}
+
 // Parsed trace context (our internal representation)
 export interface TraceContext {
   tracePath: string;
   testName: string;
   duration?: number;
-  status: "passed" | "failed" | "unknown";
+  status: 'passed' | 'failed' | 'unknown';
   errorTime?: number;
   errorMessage?: string;
   expectedValue?: string;
@@ -201,7 +320,11 @@ export interface TraceContext {
   screenshots: ScreencastFrameEvent[];
   consoleMessages: ConsoleEvent[];
   errors: BrowserEvent[];
-  actions: Array<BeforeEvent & { endTime?: number; error?: string }>;
+  // `apiName` is always populated (from the trace's title / class.method) when
+  // building the actions list, so it narrows back to a required string here.
+  actions: Array<
+    BeforeEvent & { apiName: string; endTime?: number; error?: string }
+  >;
   logs: LogEvent[];
 }
 
@@ -250,7 +373,7 @@ export interface ActionResult {
 
 // Console filter options
 export interface ConsoleFilterOptions {
-  type?: "log" | "info" | "warning" | "error" | "debug";
-  filter?: string;
+  type?: 'log' | 'info' | 'warning' | 'error' | 'debug';
+  filter?: string; // Regex pattern
   limit?: number;
 }

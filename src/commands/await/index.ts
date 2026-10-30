@@ -9,26 +9,36 @@
  *   1 = error (pane not found, tmux not running)
  *   2 = internal timeout (still running — caller should re-run)
  */
-import { Command } from "commander";
+import { Command } from 'commander';
 
-import { AGENT_PANES } from "../../config";
-import { tmuxTarget } from "../tmux";
-import { isShellIdle } from "../tmux/pane-status";
-import { capturePaneOutput } from "../wait";
+import {
+  TMUX_NOT_FOUND,
+  type TmuxSettings,
+  currentTmuxSettings,
+  tmuxAvailable,
+  tmuxTarget,
+} from '../tmux';
+import { isShellIdle } from '../tmux/pane-status';
+import { capturePaneOutput } from '../wait';
 
 const POLL_INTERVAL_MS = 1000;
 const INTERNAL_TIMEOUT_MS = 540_000; // 9 minutes (under 10 min Bash tool limit)
 
 interface AwaitOptions {
   pane: string;
+  settings: TmuxSettings;
   pattern?: string;
   long: boolean;
 }
 
-function getIdleThresholdMs(pane: string, long: boolean): number {
+function getIdleThresholdMs(
+  pane: string,
+  long: boolean,
+  settings: TmuxSettings
+): number {
   // Agent panes (Claude Code) have a constantly-changing status bar,
   // so idle detection must use a short threshold regardless of --long.
-  if (AGENT_PANES.includes(pane)) {
+  if (settings.agentWindows.includes(pane)) {
     return long ? 5_000 : 3_000;
   }
 
@@ -42,7 +52,7 @@ function getIdleThresholdMs(pane: string, long: boolean): number {
 function buildRegex(pattern: string): RegExp | undefined {
   try {
     // Clean backslash-escaped pipes (common shell escaping mistake)
-    const cleaned = pattern.replace(/\\\|/g, "|");
+    const cleaned = pattern.replace(/\\\|/g, '|');
 
     return new RegExp(cleaned);
   } catch {
@@ -52,9 +62,9 @@ function buildRegex(pattern: string): RegExp | undefined {
 }
 
 function tailLines(output: string, n: number): string {
-  const lines = output.split("\n");
+  const lines = output.split('\n');
 
-  return lines.slice(-n).join("\n");
+  return lines.slice(-n).join('\n');
 }
 
 function sleep(ms: number): Promise<void> {
@@ -62,54 +72,50 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function runAwait(opts: AwaitOptions): Promise<void> {
-  const { pane, pattern, long } = opts;
-  const target = tmuxTarget(pane);
+  const { pane, pattern, long, settings } = opts;
+  const target = tmuxTarget(pane, settings);
   const regex = pattern ? buildRegex(pattern) : undefined;
-  const idleThresholdMs = getIdleThresholdMs(pane, long);
+  const idleThresholdMs = getIdleThresholdMs(pane, long, settings);
 
   // Phase 1: Peek (1s delay, check if already done)
   await sleep(1000);
 
-  // eslint-disable-next-line no-restricted-syntax -- reassigned in poll loop
-  let lastOutput = "";
+  const capture = (): string => {
+    try {
+      return capturePaneOutput(target);
+    } catch {
+      return process.exit(1);
+    }
+  };
 
-  try {
-    lastOutput = capturePaneOutput(target);
-  } catch {
-    process.exit(1);
-  }
+  const peeked = capture();
 
   // Check if already done after peek
-  if (regex && regex.test(lastOutput)) {
+  if (regex && regex.test(peeked)) {
     console.log(`=== DONE (pattern matched) ===`);
-    console.log(tailLines(lastOutput, 40));
+    console.log(tailLines(peeked, 40));
     process.exit(0);
   }
 
   if (isShellIdle(target)) {
     console.log(`=== DONE (shell idle) ===`);
-    console.log(tailLines(lastOutput, 40));
+    console.log(tailLines(peeked, 40));
     process.exit(0);
   }
 
-  // Phase 2: Poll loop
-  // eslint-disable-next-line no-restricted-syntax -- reassigned in poll loop
-  let elapsed = 1000; // account for peek sleep
-  // eslint-disable-next-line no-restricted-syntax -- reassigned in poll loop
-  let idleMs = 0;
-
-  while (elapsed < INTERNAL_TIMEOUT_MS) {
-    await sleep(POLL_INTERVAL_MS);
-    elapsed += POLL_INTERVAL_MS;
-
-    // eslint-disable-next-line no-restricted-syntax -- assigned in try, used after
-    let output: string;
-
-    try {
-      output = capturePaneOutput(target);
-    } catch {
-      process.exit(1);
+  // Phase 2: Poll loop. Each round carries the time spent so far, the last
+  // capture and how long it has stayed unchanged.
+  const poll = async (
+    elapsed: number,
+    lastOutput: string,
+    idleMs: number
+  ): Promise<void> => {
+    if (elapsed >= INTERNAL_TIMEOUT_MS) {
+      return;
     }
+
+    await sleep(POLL_INTERVAL_MS);
+    const output = capture();
 
     // Pattern match
     if (regex && regex.test(output)) {
@@ -126,24 +132,28 @@ async function runAwait(opts: AwaitOptions): Promise<void> {
     }
 
     // Idle detection (output unchanged)
-    if (output === lastOutput) {
-      idleMs += POLL_INTERVAL_MS;
-
-      if (idleMs >= idleThresholdMs) {
-        console.log(`=== DONE (idle ${idleThresholdMs / 1000}s) ===`);
-        console.log(tailLines(output, 40));
-        process.exit(0);
-      }
-    } else {
-      idleMs = 0;
-      lastOutput = output;
+    if (output !== lastOutput) {
+      return poll(elapsed + POLL_INTERVAL_MS, output, 0);
     }
-  }
+
+    const idleNow = idleMs + POLL_INTERVAL_MS;
+
+    if (idleNow >= idleThresholdMs) {
+      console.log(`=== DONE (idle ${idleThresholdMs / 1000}s) ===`);
+      console.log(tailLines(output, 40));
+      process.exit(0);
+    }
+
+    return poll(elapsed + POLL_INTERVAL_MS, lastOutput, idleNow);
+  };
+
+  // 1000: the peek's sleep already counts toward the timeout.
+  await poll(1000, peeked, 0);
 
   // Internal timeout — exit 2 so caller can re-run
   const finalOutput = capturePaneOutput(target);
   console.log(
-    `=== TIMEOUT (${INTERNAL_TIMEOUT_MS / 1000}s elapsed, still running) ===`,
+    `=== TIMEOUT (${INTERNAL_TIMEOUT_MS / 1000}s elapsed, still running) ===`
   );
   console.log(tailLines(finalOutput, 40));
   process.exit(2);
@@ -151,18 +161,28 @@ async function runAwait(opts: AwaitOptions): Promise<void> {
 
 export const registerAwaitCommand = (program: Command): void => {
   program
-    .command("await <pane> [pattern]")
+    .command('await <pane> [pattern]')
     .description(
-      "Block until pane is done (pattern match, shell idle, or output idle)",
+      'Block until pane is done (pattern match, shell idle, or output idle)'
     )
-    .option("--long", "Use long idle threshold (60s) for CI/long operations")
+    .option('--long', 'Use long idle threshold (60s) for CI/long operations')
     .action(
       async (
         pane: string,
         pattern: string | undefined,
-        opts: { long: boolean },
+        opts: { long: boolean }
       ) => {
-        await runAwait({ pane, pattern, long: opts.long ?? false });
-      },
+        if (!tmuxAvailable()) {
+          console.error(TMUX_NOT_FOUND);
+          process.exit(1);
+        }
+
+        await runAwait({
+          pane,
+          pattern,
+          long: opts.long ?? false,
+          settings: currentTmuxSettings(),
+        });
+      }
     );
 };
