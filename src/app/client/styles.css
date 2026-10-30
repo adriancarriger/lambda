@@ -1,0 +1,9954 @@
+/* Claude Code's look, measured from claude.ai/code (2026-10-16): a neutral
+   warm off-white page, white panels with a hairline ring and a faint drop
+   shadow, and near-black text — black is the only accent. */
+:root {
+  --black: #0b0b0b;
+  --white: #fcfcfb;
+  --surface: #ffffff;
+  --grey-50: #f6f6f4;
+  --grey-100: #f0efec;
+  --grey-300: #dcdbd7;
+  --grey-500: #898781;
+  --grey-800: #52514e;
+  --border: rgb(11 11 11 / 10%);
+  --ring: 0 0 0 1px rgb(11 11 11 / 10%);
+  --lift: 0 4px 20px rgb(0 0 0 / 3.5%);
+  --accent: var(--black);
+  --link: #184f95;
+  --danger: #8e2626;
+  /* The Tickets screen's status colours: Building, Shipped, working. */
+  --amber: #c27b12;
+  --amber-tint: #fbf4e6;
+  --amber-ink: #6b4a0e;
+  --shipped: #2f5fa8;
+  --success: #2f7d4a;
+  --urgent: #c2410c;
+  --label: #3b6fb6;
+  --terminal: #262624;
+  --sidebar-bg: #fbfbf9;
+  --sidebar-hover: #f5f5f2;
+  --sidebar-active: #f0efec;
+  --radius: 8px;
+  --serif: anthropic-serif, Georgia, 'Times New Roman', serif;
+  font-family: anthropic-sans, system-ui, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  font-size: 14px;
+  color: var(--black);
+  background: var(--white);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* The app is a fixed-height shell: only its panes scroll, never the page.
+   (xterm's hidden helpers can otherwise make the document taller than the
+   window, so the whole page — sidebar included — scrolled.) */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  background: var(--white);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The loading screen: the λ from the favicon, centred, breathing in and out. */
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--white);
+  transition: opacity 400ms ease;
+}
+
+/* The app is up underneath: fade away (App: LOADING_FADE_MS). */
+.loading--out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading__lambda {
+  fill: none;
+  stroke: var(--black);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: lambda-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes lambda-breathe {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading__lambda {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ── layout ─────────────────────────────────────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: 288px minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── sidebar ────────────────────────────────────────────────────────────── */
+.sidebar {
+  /* Light gray, like Claude's sidebar; the main pane stays white. */
+  background: var(--sidebar-bg);
+  color: var(--black);
+  border-right: 1px solid var(--grey-100);
+  padding: 16px 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* A sent message that never reached the pod — offered back. */
+.lost-message {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  max-width: 860px;
+  margin: 0 auto 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--grey-50);
+  font-size: 14px;
+}
+
+.lost-message span {
+  flex: 1;
+  min-width: 240px;
+}
+
+/* ── the queue bar: position · Skip · Up next ───────────────────────────── */
+.queue-bar {
+  max-width: 860px;
+  margin: 0 auto 12px;
+}
+
+.queue-bar__row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 14px;
+}
+
+.queue-bar__row .ghost {
+  padding: 4px 12px;
+}
+
+/* Something new arrived while you were on this item — quietly. */
+.up-next {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+  font-size: 14px;
+}
+
+.up-next__dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--black);
+  animation: dot-pulse 1s ease-in-out infinite alternate;
+}
+
+.up-next__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.up-next .ghost {
+  flex: none;
+  padding: 4px 12px;
+}
+
+/* Sidebar: this pod has something new since your current item came up. */
+.nav-item__new {
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--black);
+  animation: dot-pulse 1s ease-in-out infinite alternate;
+}
+
+/* ── the Time page ─────────────────────────────────────────────────────── */
+.time-page {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.time-page h2 {
+  margin: 4px 0 6px;
+  font-size: 26px;
+}
+
+.time-page__heading {
+  margin: 28px 0 12px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.time-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.time-stats > div {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--grey-50);
+}
+
+.time-stats__label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.time-stats strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-chart {
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  gap: 6px;
+  height: 180px;
+  align-items: end;
+}
+
+.time-chart__day {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+
+.time-chart__bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--grey-300);
+}
+
+.time-chart__bar--today {
+  background: var(--black);
+}
+
+.time-chart__value,
+.time-chart__label {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--grey-500);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.time-chart__value {
+  margin-bottom: 4px;
+}
+
+.time-chart__label {
+  margin-top: 6px;
+}
+
+.time-pod {
+  margin-bottom: 10px;
+  border: 1px solid var(--grey-100);
+  border-radius: var(--radius);
+}
+
+.time-pod summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.time-pod ul {
+  margin: 0;
+  padding: 0 16px 12px;
+  list-style: none;
+}
+
+.time-pod li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--grey-100);
+}
+
+.time-pod__ms {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Active planning time, pinned to the bottom of the sidebar. */
+.stopwatch {
+  position: sticky;
+  bottom: -16px;
+  margin: auto -10px -16px;
+  padding: 14px 20px 16px;
+  border: 0;
+  border-top: 1px solid var(--grey-100);
+  background: var(--sidebar-bg);
+  color: var(--grey-500);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stopwatch:hover {
+  background: var(--sidebar-hover);
+}
+
+.stopwatch__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stopwatch__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grey-300);
+}
+
+.stopwatch--ticking .stopwatch__dot {
+  background: var(--black);
+  animation: dot-pulse 1s ease-in-out infinite alternate;
+}
+
+.stopwatch__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.stopwatch__time {
+  display: block;
+  margin-top: 4px;
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stopwatch--ticking .stopwatch__time {
+  color: var(--black);
+}
+
+.stopwatch__scope {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-item--new {
+  margin-top: 8px;
+  border: 1px solid var(--grey-300);
+  background: var(--white);
+  font-weight: 600;
+  justify-content: center;
+}
+
+/* ── new pod form ──────────────────────────────────────────────────────── */
+.new-pod {
+  max-width: 860px;
+  margin: 32px auto 0;
+}
+
+.new-pod h2 {
+  margin: 0 0 6px;
+  font-size: 24px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.field input,
+.field textarea {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: normal;
+  text-transform: none;
+  font-weight: 400;
+  outline: none;
+  resize: vertical;
+}
+
+.field__error {
+  color: var(--black);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  text-decoration: underline;
+}
+
+.new-pod .composer__actions {
+  margin-top: 16px;
+}
+
+.primary:disabled {
+  background: var(--grey-300);
+  cursor: default;
+}
+
+.sidebar__label {
+  margin: 20px 8px 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--grey-500);
+}
+
+.sidebar__empty {
+  padding: 8px;
+  font-size: 13px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--black);
+  text-align: left;
+}
+
+.nav-item:hover {
+  background: var(--sidebar-hover);
+}
+
+.nav-item--active {
+  background: var(--sidebar-active);
+}
+
+.nav-item--active:hover {
+  background: var(--sidebar-active);
+}
+
+.nav-item--dragging {
+  opacity: 0.4;
+}
+
+.nav-item--inbox {
+  font-size: 18px;
+  font-weight: 700;
+  justify-content: space-between;
+}
+
+.nav-item__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-item__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-item__sub {
+  font-size: 12px;
+  color: var(--grey-500);
+}
+
+/* Autoplay: an iOS-style switch, black when on. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch__track {
+  position: relative;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--grey-300);
+  transition: background 120ms ease;
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+  transition: transform 120ms ease;
+}
+
+.switch input:checked + .switch__track {
+  background: var(--black);
+}
+
+.switch input:checked + .switch__track .switch__thumb {
+  transform: translateX(16px);
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--black);
+  outline-offset: 2px;
+}
+
+/* A section whose clip is rendering right now. */
+.player__dot--loading {
+  animation: dot-pulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes dot-pulse {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.25;
+  }
+}
+
+/* A phase or checkpoint name: hover for what that phase is for. */
+.phase-tip {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  outline: none;
+}
+
+/* <Tip>: fixed-position, so overflow on the sidebar never clips it. */
+.tip {
+  position: fixed;
+  z-index: 1000;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--black);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+  pointer-events: none;
+  animation: tip-in 90ms ease-out;
+}
+
+.tip--above {
+  transform: translateY(-100%);
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Monochrome status: weight and inversion, not colour. */
+.status--needs-you {
+  color: var(--black);
+  font-weight: 700;
+}
+
+.status--stalled {
+  color: var(--black);
+  text-decoration: underline;
+}
+
+.kind {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--black);
+  color: var(--white);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Right-click menu + inline rename (like Claude's sidebar). */
+.context-menu {
+  position: fixed;
+  z-index: 10;
+  min-width: 160px;
+  padding: 6px;
+  border: 1px solid var(--grey-300);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.context-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--black);
+  text-align: left;
+}
+
+.context-menu button:hover {
+  background: var(--grey-100);
+}
+
+.context-menu .context-menu__danger {
+  color: var(--danger);
+}
+
+.rename {
+  width: 100%;
+  padding: 2px 6px;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  outline: none;
+}
+
+.nav-item {
+  cursor: pointer;
+  user-select: none;
+}
+
+.grip {
+  color: var(--grey-500);
+  cursor: grab;
+}
+
+.count {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--black);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ── main ───────────────────────────────────────────────────────────────── */
+/* Toolbar on top, history scrolling in the middle, composer pinned at the
+   bottom — like Claude's web UI. */
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
+  padding: 0 40px;
+}
+
+.main > .toolbar {
+  flex: none;
+}
+
+.main__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 0 26px;
+  background: var(--white);
+  border-bottom: 1px solid var(--grey-100);
+}
+
+/* Long (renamed) titles truncate so the player keeps its room. */
+.toolbar__title {
+  flex: 0 1 auto;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar__right {
+  flex: none;
+}
+
+/* ── player: ⏮ ▶ ⏭  0:42 ━━●━━│━━│━━  2:10 ─────────────────────────────── */
+.player {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+}
+
+.player--disabled {
+  opacity: 0.35;
+}
+
+.player__buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--grey-300);
+  border-radius: 50%;
+  background: var(--white);
+  color: var(--black);
+  font-size: 13px;
+}
+
+.icon-button--primary {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: var(--black);
+  color: var(--white);
+  font-size: 14px;
+}
+
+.icon-button:disabled {
+  cursor: default;
+}
+
+.player__time {
+  min-width: 36px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.player__track-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 120px;
+}
+
+.player__track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--grey-100);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.player__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--black);
+}
+
+.player__head {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--black);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.player__dot {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--white);
+  transform: translate(-50%, -50%);
+}
+
+.player__dot--active {
+  background: var(--black);
+}
+
+/* A ticket: a small tick, so 20 of them don't swamp the bar. */
+.player__dot--minor {
+  width: 6px;
+  height: 6px;
+  border-width: 1.5px;
+}
+
+.player__tooltip {
+  position: absolute;
+  bottom: 14px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--black);
+  color: var(--white);
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.player__labels {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  height: 16px;
+}
+
+.player__label {
+  position: absolute;
+  padding: 0 2px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--grey-500);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player__label--active {
+  color: var(--black);
+  font-weight: 700;
+}
+
+.toggle {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.toggle--on {
+  border-color: var(--black);
+}
+
+.audio-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0 0;
+}
+
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--grey-300);
+  border-radius: 999px;
+  color: var(--grey-800);
+  font-size: 12px;
+}
+
+.chip--action {
+  border-color: var(--black);
+  background: var(--black);
+  color: var(--white);
+  font-weight: 600;
+}
+
+.toolbar h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rate input {
+  accent-color: var(--black);
+}
+
+.primary,
+.ghost {
+  border-radius: var(--radius);
+  padding: 9px 16px;
+  font-weight: 600;
+}
+
+.primary {
+  border: 0;
+  background: var(--black);
+  color: var(--white);
+}
+
+.ghost {
+  border: 1px solid var(--grey-300);
+  background: var(--white);
+  color: var(--black);
+}
+
+.ghost:hover {
+  border-color: var(--black);
+}
+
+.ghost:disabled {
+  color: var(--grey-500);
+  cursor: default;
+}
+
+.icon {
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+}
+
+.error {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--grey-50);
+  text-align: left;
+  font-weight: 600;
+}
+
+.empty {
+  padding: 96px 0;
+  text-align: center;
+}
+
+.lead {
+  font-size: 19px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.muted {
+  color: var(--grey-500);
+}
+
+/* ── question card ──────────────────────────────────────────────────────── */
+.card {
+  max-width: 860px;
+  margin: 24px auto 0;
+}
+
+.card__meta {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--grey-500);
+  font-weight: 600;
+}
+
+.card__position {
+  margin-left: auto;
+  color: var(--black);
+}
+
+.section {
+  margin-top: 18px;
+  padding: 14px 18px;
+  border-left: 3px solid transparent;
+}
+
+.section--playing {
+  border-left-color: var(--black);
+  background: var(--grey-50);
+}
+
+.section header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.section p {
+  margin: 8px 0 0;
+  line-height: 1.55;
+}
+
+.options {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.option {
+  padding: 12px 14px;
+  border: 1px solid var(--grey-300);
+  border-radius: var(--radius);
+}
+
+.option--rec {
+  border: 1px solid var(--border);
+}
+
+.option p {
+  margin-top: 4px;
+}
+
+.ascii {
+  margin: 10px 0 0;
+  padding: 14px;
+  overflow-x: auto;
+  background: var(--black);
+  color: var(--white);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.decisions {
+  list-style: none;
+  margin: 10px 0 16px;
+  padding: 0;
+}
+
+.decisions li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--grey-100);
+}
+
+/* Checkpoint decisions: headline (click for details) · why · 🔊 */
+.decision {
+  align-items: flex-start;
+  border-left: 3px solid transparent;
+  padding-left: 10px !important;
+}
+
+.decision--playing {
+  border-left-color: var(--black);
+  background: var(--grey-50);
+}
+
+.decision__number {
+  min-width: 18px;
+  font-weight: 700;
+}
+
+.decision__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.decision__headline {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  flex-wrap: wrap;
+  width: 100%;
+  cursor: pointer;
+}
+
+.decision__headline:disabled {
+  cursor: default;
+}
+
+/* ── item context: how we got here · the chat · what it led to ─────────── */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.back {
+  margin-bottom: 12px;
+}
+
+.status-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.card__context:empty {
+  display: none;
+}
+
+.origin,
+.chat,
+.led-to {
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--grey-50);
+}
+
+.origin h3,
+.chat__heading,
+.led-to h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.origin p {
+  margin: 0 0 8px;
+}
+
+.origin__quote {
+  padding-left: 10px;
+  border-left: 3px solid var(--grey-300);
+  /* Keep their line breaks — a numbered list must stay a list. */
+  white-space: pre-line;
+}
+
+.origin__full summary {
+  color: var(--grey-500);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.origin__full p {
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--grey-100);
+  color: var(--grey-800);
+  white-space: pre-line;
+}
+
+.chat .link-button {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.chat__who {
+  margin-right: 6px;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* A message with several parts, answered part by part. */
+.chat__parts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: part;
+}
+
+.chat__parts li {
+  position: relative;
+  margin: 0 0 10px;
+  padding: 10px 12px 10px 36px;
+  border-radius: var(--radius);
+  background: var(--white);
+  counter-increment: part;
+}
+
+.chat__parts li::before {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-weight: 700;
+  content: counter(part);
+}
+
+.chat__part--playing {
+  box-shadow: inset 3px 0 0 var(--black);
+}
+
+.chat__part-status {
+  margin: 4px 0 0;
+  color: var(--grey-500);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chat__event {
+  margin: 8px 0;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.chat__pending {
+  margin: 8px 0 0;
+}
+
+/* "Claude is thinking": three dots that rise in turn. */
+.typing {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 18px;
+  margin-top: 4px;
+}
+
+.typing span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--grey-500);
+  animation: typing-bounce 1.1s ease-in-out infinite;
+}
+
+.typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.chat--live {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  background: var(--white);
+}
+
+.led-to ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.led-to li {
+  padding: 4px 0;
+}
+
+/* A checkpoint's "The plan": the dev's line breaks are its structure. */
+.plan {
+  white-space: pre-line;
+  line-height: 1.6;
+}
+
+/* ── UX review (CP4): flows of screens, each before | after ───────────── */
+.flow {
+  margin: 26px 0 6px;
+  padding: 0 4px;
+}
+
+.flow:first-of-type {
+  margin-top: 8px;
+}
+
+.flow__title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 18px;
+}
+
+.flow__label {
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.flow p {
+  margin: 4px 0 0;
+  color: var(--grey-800);
+}
+
+/* Screens in a flow sit indented under it, joined by a rule. */
+.flow ~ .screen {
+  margin-left: 14px;
+  border-left-width: 3px;
+}
+.screen {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--grey-300);
+  border-radius: var(--radius);
+}
+
+.screen--playing {
+  border-color: var(--black);
+  box-shadow: inset 3px 0 0 var(--black);
+}
+
+.screen__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* Tickets, version mark and play stay on one line: when the row is too
+   narrow they wrap together under the title. */
+.screen__meta {
+  display: flex;
+  flex: 1 0 auto;
+  gap: 10px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.screen__head .icon {
+  margin-left: auto;
+}
+
+.screen__compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.screen__compare figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.screen__compare figcaption,
+.screen__label {
+  margin: 0 0 6px;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.screen__compare pre {
+  margin: 0;
+  overflow-x: auto;
+}
+
+/* The workflow panel's Render Full | ASCII switch. */
+.workflow__render {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 10px 6px;
+  color: var(--grey-500);
+  font-size: 12px;
+}
+
+/* Compact, like the panel's other rows. */
+.workflow__render .toggle {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.workflow__render [role='group'] {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* Full greyed out: this pod's computer can't run Claude Design. */
+.workflow__render .toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.workflow__render-note {
+  margin: -2px 10px 6px;
+  font-size: 12px;
+}
+
+/* The Screens header's Pictures | ASCII switch. */
+.ux-view {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.screen__situation + .screen__situation {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--grey-100);
+}
+
+/* The situation names the pair below it, so it reads above Before/After. */
+.screen__situation-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.screen__picture {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--grey-300);
+  border-radius: 6px;
+}
+
+.screen__legend {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+/* Why the screen exists, from the person's side — collapsed, never spoken. */
+.screen__journey {
+  margin: 8px 0 4px;
+}
+
+.screen__journey summary {
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.journey {
+  margin-top: 8px;
+}
+
+.screen__label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.screen__extra {
+  padding: 0;
+  font-size: 14px;
+}
+
+.screen__states {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.screen__states li {
+  margin: 4px 0;
+}
+
+/* Titles already carry their build-order number ("1 - …"). */
+.plan-tickets {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-tickets li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--grey-100);
+}
+
+/* A ticket's Today / After, labels in a narrow left column. */
+.today-after {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 4px 10px;
+  margin: 6px 0 0;
+}
+
+.today-after dt {
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding-top: 3px;
+}
+
+.today-after dd {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.plan-ticket--playing {
+  box-shadow: inset 3px 0 0 var(--black);
+  background: var(--grey-50);
+}
+
+.plan-tickets li:last-child {
+  border-bottom: 0;
+}
+
+.plan-tickets p {
+  margin: 4px 0 0;
+}
+
+/* A decision's ticket numbers, beside its headline. */
+.decision__tickets {
+  padding: 1px 8px;
+  border: 1px solid var(--grey-300);
+  border-radius: 999px;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.decisions__engineering {
+  margin-top: 14px;
+}
+
+.decisions__engineering summary {
+  color: var(--grey-500);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.decision__parts {
+  grid-template-columns: 62px 1fr;
+  margin-top: 8px;
+}
+
+.decision__instead {
+  margin: 10px 0 0;
+  font-size: 14px;
+}
+
+/* The justification sits under the headline, inside the same toggle. */
+.decision__why {
+  flex-basis: 100%;
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+.decision__chevron {
+  color: var(--grey-500);
+}
+
+.decision__details {
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--grey-50);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.kind--small {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+.decisions p {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
+/* ── conversation & thread ─────────────────────────────────────────────── */
+.conversation,
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* The thread is the pod view's main content: it flows with the page instead
+   of scrolling inside a small box. */
+.thread {
+  padding-right: 6px;
+}
+
+.pod-panel {
+  max-width: 860px;
+  margin: 36px auto 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--grey-100);
+}
+
+/* A pod's idle page: the phase's purpose under the lead line. */
+.empty__detail {
+  max-width: 560px;
+  margin: 8px auto 20px;
+}
+
+.pod-panel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+/* ── composer ──────────────────────────────────────────────────────────── */
+.composer {
+  max-width: 860px;
+  margin: 20px auto 0;
+}
+
+.composer textarea {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+  outline: none;
+}
+
+.composer__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* ── agent terminals (the Agents rail) ─────────────────────────────────── */
+.tabs {
+  flex: none;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+}
+
+.tab {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--grey-800);
+  color: var(--white);
+  font-weight: 600;
+}
+
+.tab--active {
+  background: var(--white);
+  color: var(--black);
+}
+
+.terminal {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+/* ‹ Exchange 2 of 4 › — step back through earlier exchanges on an item. */
+.exchange-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: var(--grey-500);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.exchange-nav__step {
+  min-width: 32px;
+  padding: 2px 8px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.exchange-nav__step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Live questions asked since the exchange the item opens with. */
+.chat__live-after {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--grey-300);
+}
+
+/* ── Sidebar split: pods on top, the workflow panel in the bottom half ── */
+.sidebar {
+  overflow: hidden;
+}
+
+.sidebar__top {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workflow {
+  flex: 1 1 50%;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--grey-100);
+  font-size: 13px;
+}
+
+.workflow__empty {
+  margin: 4px 10px;
+}
+
+.workflow__agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 0 10px 6px;
+  color: var(--grey-500);
+  font-size: 12px;
+}
+
+.workflow__watchdog {
+  margin: 0 10px 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--grey-100);
+  font-size: 12px;
+}
+
+.workflow__stages,
+.workflow__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow__row {
+  display: grid;
+  grid-template-columns: 16px 1fr auto 40px;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workflow__row:disabled {
+  cursor: default;
+}
+
+.workflow__row:not(:disabled):hover {
+  background: var(--grey-100);
+}
+
+.workflow__steps {
+  margin: 0 0 4px 22px;
+  border-left: 1px solid var(--grey-300);
+}
+
+.workflow__step {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 8px;
+  font-size: 12px;
+}
+
+.workflow__icon {
+  text-align: center;
+}
+
+.workflow__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow__who,
+.workflow__time {
+  color: var(--grey-500);
+  font-size: 11px;
+  text-align: right;
+}
+
+.workflow__stage--todo,
+.workflow__step--todo {
+  color: var(--grey-500);
+}
+
+.workflow__stage--now > .workflow__row,
+.workflow__stage--waiting-you > .workflow__row,
+.workflow__step--now {
+  font-weight: 700;
+}
+
+.workflow__step--untracked .workflow__icon {
+  opacity: 0.5;
+}
+
+.workflow__legend {
+  margin: 8px 10px 0;
+  font-size: 11px;
+}
+
+.workflow__tip strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.workflow__tip p {
+  margin: 0 0 4px;
+}
+
+.workflow__tip-muted {
+  opacity: 0.7;
+}
+
+.sidebar__audio {
+  display: block;
+  margin: 6px 10px 0;
+  overflow: hidden;
+  color: var(--grey-500);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field__choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* ── The split proposal (CP3) and the change lists (CP4/CP5) ── */
+.proposal__counts {
+  margin: 0 0 12px;
+}
+
+.proposal__tickets {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.proposal__tickets > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  border-top: 1px solid var(--grey-100);
+}
+
+.proposal__tickets p {
+  margin: 4px 0;
+}
+
+.proposal__e2e {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.proposal__e2e > span:first-child {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--grey-100);
+  font-weight: 600;
+}
+
+.proposal__e2e--new-file > span:first-child {
+  background: var(--black);
+  color: #fff;
+}
+
+.proposal__files summary,
+.changes__engineering summary {
+  color: var(--grey-500);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.changes {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.changes__kind {
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workflow__stage--skipped {
+  color: var(--grey-500);
+  text-decoration: line-through;
+}
+
+/* ── The chat (always in the center) ─────────────────────────────────── */
+.chat-panel__log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.chat-panel__topic {
+  margin: 14px 0 6px;
+  color: var(--grey-500);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-panel__compose {
+  padding: 10px 16px 16px;
+  border-top: 1px solid var(--grey-100);
+}
+
+.chat-panel__about {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--grey-500);
+  font-size: 12px;
+}
+
+.chat-panel__about select {
+  max-width: 100%;
+  font: inherit;
+}
+
+.chat-panel__compose textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.workflow__request {
+  margin: 0 10px 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--black);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workflow__requests-done {
+  margin: 0 10px 6px;
+  font-size: 12px;
+}
+
+.chat-panel__request {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* "Decided in Chat" — at the end of the card, with the one action that sends it. */
+.chat-decided {
+  padding: 14px 16px;
+  border-left: 3px solid var(--grey-300);
+  border-radius: var(--radius);
+  background: var(--grey-50);
+}
+
+.chat-decided ol {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.chat-decided li {
+  margin-bottom: 6px;
+}
+
+.chat-decided p {
+  margin: 8px 0 0;
+}
+
+ol.changes {
+  padding-left: 0;
+  list-style: none;
+}
+
+/* Room for the playing bar (inset 3px on the left) — it never touches text. */
+ol.changes > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+}
+
+.changes__context {
+  margin: 4px 0 0;
+  color: var(--grey-500);
+  font-size: 14px;
+}
+
+/* Suggested judgements (CP5): tick the ones to keep. */
+.judgements__all {
+  display: inline-flex;
+  gap: 6px;
+  margin: 4px 0 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.judgements__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.judgements__list > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  border-top: 1px solid var(--grey-100);
+}
+
+.judgements__item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.judgements__item input {
+  margin-top: 5px;
+}
+
+.judgements__item p {
+  margin: 4px 0 0;
+}
+
+.judgements__label {
+  color: var(--grey-500);
+  font-weight: 600;
+}
+
+/* Skip a stage (the owner's call): shown on hover, beside the stage's row. */
+.workflow__stage {
+  position: relative;
+}
+
+.workflow__skip {
+  position: absolute;
+  top: 3px;
+  right: 56px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--grey-100);
+  font-size: 11px;
+  opacity: 0;
+}
+
+.workflow__stage:hover .workflow__skip,
+.workflow__skip:focus-visible {
+  opacity: 1;
+}
+
+/* Batch pods: tickets × stages. */
+.workflow__grid {
+  margin: 0 10px 8px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.workflow__grid th,
+.workflow__grid td {
+  padding: 1px 4px;
+  text-align: center;
+}
+
+.workflow__grid tbody th {
+  text-align: left;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.workflow__grid thead th {
+  color: var(--grey-500);
+  font-weight: 400;
+}
+
+.workflow__cell--done {
+  color: var(--grey-500);
+}
+
+.workflow__cell--now {
+  font-weight: 700;
+}
+
+.workflow__cell--todo {
+  color: var(--grey-300);
+}
+
+/* New pod: one box, Freeform or Structured. */
+.new-pod__mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+/* New planning Lambda, like an empty ChatGPT chat: a question a little
+   above the middle, one rounded box (+ left, ↑ right) and quiet starting
+   points under it. The box is a pill until it holds more than a line. */
+.new-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 26vh 24px 48px;
+}
+
+.new-chat__ask {
+  margin: 0 0 24px;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.new-chat__box {
+  position: relative;
+  display: grid;
+  grid-template-areas: 'plus text send';
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--white);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 6%);
+}
+
+.new-chat__box--tall {
+  grid-template-areas:
+    'text text text'
+    'tray tray tray'
+    'plus . send';
+  padding: 14px 10px 10px 18px;
+  border-radius: 24px;
+}
+
+.new-chat__box--over {
+  border-color: var(--grey-500);
+}
+
+.new-chat__box textarea {
+  grid-area: text;
+  min-height: 24px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  line-height: 24px;
+  outline: none;
+  resize: none;
+}
+
+.new-chat__box .image-drop__tray {
+  grid-area: tray;
+}
+
+.new-chat__controls {
+  display: contents;
+}
+
+.new-chat__icon {
+  grid-area: plus;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--grey-800);
+  font-size: 22px;
+  font-weight: 300;
+  cursor: pointer;
+}
+
+.new-chat__icon:hover {
+  background: var(--grey-100);
+}
+
+.new-chat__send {
+  grid-area: send;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--black);
+  color: var(--white);
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.new-chat__send:disabled {
+  background: var(--grey-100);
+  color: var(--grey-500);
+  cursor: default;
+}
+
+.new-chat__ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 10px 0 0 18px;
+}
+
+.new-chat__suggestions {
+  align-self: stretch;
+  margin: 18px 0 0;
+  padding: 0 8px;
+  list-style: none;
+}
+
+.new-chat__suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--grey-500);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.new-chat__suggestions button:hover {
+  background: var(--grey-100);
+  color: var(--grey-800);
+}
+
+.new-chat__suggestion-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.new-chat__busy {
+  margin-top: 12px;
+}
+
+/* The structured-planning pitch in the Plan rail. */
+.structure-pitch__eyebrow {
+  margin: 0 0 6px;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.structure-pitch__what {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.structure-pitch__why {
+  margin: 10px 0 0;
+  color: var(--grey-800);
+}
+
+.structure-pitch__steps {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 18px;
+  padding-left: 22px;
+  font-weight: 500;
+}
+
+.structure-pitch__steps li::marker {
+  color: var(--grey-500);
+  font-variant-numeric: tabular-nums;
+}
+
+.structure-pitch__between,
+.structure-pitch__wait {
+  margin: 0 0 10px;
+}
+
+.new-pod__reads {
+  font-size: 13px;
+}
+
+.new-pod__batch {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 14px;
+}
+
+/* ── messages, Claude Code style ───────────────────────────────────────────
+   Claude's text sits on the page with a ⏺ in the gutter and renders as
+   markdown; the owner's is a grey prompt block with a ›. No bubbles. */
+.msg {
+  position: relative;
+  margin: 10px 0;
+  padding-left: 22px;
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.msg::before {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  font-size: 13px;
+  line-height: 1.85;
+}
+
+.msg--claude::before {
+  content: '⏺';
+  color: var(--black);
+}
+
+.msg--you {
+  padding: 8px 12px 8px 26px;
+  border-radius: 6px;
+  background: var(--grey-100);
+}
+
+.msg--you::before {
+  top: 8px;
+  left: 10px;
+  color: var(--grey-500);
+  font-weight: 700;
+  content: '›';
+}
+
+.msg--progress,
+.msg--pending {
+  opacity: 0.6;
+}
+
+.msg--progress::before {
+  color: var(--grey-500);
+}
+
+.msg--latest {
+  outline: 2px solid var(--black);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.msg__label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--grey-500);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.msg__text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.msg__images img {
+  display: block;
+  max-width: 240px;
+  max-height: 180px;
+  border: 1px solid var(--grey-300);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.chat__parts .msg {
+  margin: 0 0 6px;
+}
+
+/* Markdown from an agent. */
+.md {
+  overflow-wrap: anywhere;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p,
+.md ul,
+.md ol,
+.md pre,
+.md table,
+.md blockquote {
+  margin: 0 0 10px;
+}
+
+.md ul,
+.md ol {
+  padding-left: 22px;
+}
+
+.md li {
+  margin: 2px 0;
+}
+
+.md li > p {
+  margin: 0;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.md h1 {
+  font-size: 17px;
+}
+
+.md code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--grey-100);
+  font-size: 0.88em;
+}
+
+.md pre {
+  padding: 10px 12px;
+  border: 1px solid var(--grey-100);
+  border-radius: 6px;
+  background: var(--grey-50);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.md pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.md blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--grey-300);
+  color: var(--grey-800);
+}
+
+.md table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.md th,
+.md td {
+  padding: 4px 10px;
+  border: 1px solid var(--grey-300);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md th {
+  background: var(--grey-50);
+}
+
+.md a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.md hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--grey-300);
+}
+
+.md input[type='checkbox'] {
+  margin: 0 6px 0 0;
+}
+
+/* Images dropped into a message box. */
+.image-drop {
+  position: relative;
+  width: 100%;
+}
+
+.image-drop--over textarea {
+  border-style: dashed;
+  background: var(--grey-50);
+}
+
+.image-drop__hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.image-drop__tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.image-drop__thumb {
+  position: relative;
+}
+
+.image-drop__thumb img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--grey-300);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.image-drop__thumb button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--black);
+  color: var(--white);
+  font-size: 11px;
+  line-height: 20px;
+}
+
+.image-drop__status {
+  font-size: 13px;
+}
+
+.image-drop__error {
+  color: var(--black);
+  font-weight: 700;
+}
+
+/* The checkpoint's goal: what to judge here, and what to leave for later. */
+.checkpoint-goal {
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--grey-300);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--grey-50);
+}
+
+.checkpoint-goal p {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.checkpoint-goal__label {
+  color: var(--grey-500);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* A pod pulled out of a batch: which one it came from. */
+.nav-item__from {
+  display: block;
+  overflow: hidden;
+  color: var(--grey-500);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A plan row's lane — a glance, not a sentence (and never read aloud). */
+.lane-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--grey-300);
+  border-radius: 999px;
+  color: var(--grey-800);
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
+.lane-tag--changed {
+  border-color: var(--black);
+  color: var(--black);
+}
+
+/* The chat takes a dropped image anywhere on it. */
+.center-chat--dropping {
+  outline: 3px dashed var(--black);
+  outline-offset: -8px;
+}
+
+.chat-panel__drop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(255 255 255 / 85%);
+  font-size: 18px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* Chat playlist: 🔊 on a message plays it and everything newer. */
+.msg__listen {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0 2px;
+  opacity: 0.35;
+  cursor: pointer;
+}
+
+.msg:hover .msg__listen,
+.msg--listening .msg__listen {
+  opacity: 1;
+}
+
+.msg--you .msg__listen {
+  top: 6px;
+  right: 6px;
+}
+
+.chat-panel__log .msg {
+  padding-right: 28px;
+}
+
+.msg--listening {
+  outline: 2px solid var(--black);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+/* ── Lambda shell: sidebar brand, center header, rails ─────────────────── */
+.sidebar__brand {
+  flex: none;
+  padding: 2px 10px 14px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.main[hidden],
+.rail[hidden] {
+  display: none;
+}
+
+.main {
+  padding: 0 24px;
+}
+
+.main > .toolbar {
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.main .toolbar h1 {
+  font-size: 20px;
+}
+
+.main .toolbar__title {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.main > .error {
+  flex: none;
+  max-width: 860px;
+  margin: 12px auto 0;
+}
+
+.main > .empty {
+  flex: 1;
+}
+
+/* All caught up: a quiet page. The λ breathes while a Lambda works. */
+.caught-up {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+.caught-up .muted {
+  margin-top: 8px;
+}
+
+/* The λ on a quiet page (caught up, a Lambda with nothing to review). */
+.lambda-mark {
+  display: block;
+  margin: 0 auto 16px;
+  fill: none;
+  stroke: var(--black);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.25;
+}
+
+.lambda-mark--working {
+  animation: lambda-mark-breathe 2.4s ease-in-out infinite;
+}
+
+/* Never all the way out: a still frame still shows the λ. */
+@keyframes lambda-mark-breathe {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.caught-up__more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caught-up__lambda--working {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.center-chat {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  max-width: 860px;
+  min-height: 0;
+  margin: 0 auto;
+}
+
+.center-chat .chat-panel__log {
+  padding: 16px 0;
+}
+
+.center-chat .chat-panel__compose {
+  padding: 10px 0 20px;
+}
+
+.center-chat .chat-panel__compose textarea {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 16px;
+  resize: none;
+  outline: none;
+}
+
+.center-chat .chat-panel__about strong {
+  color: var(--black);
+}
+
+.chat__empty {
+  margin-top: 32px;
+  text-align: center;
+}
+
+/* The rail icons in the chat's header (Claude Code style). */
+.rail-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.rail-switch__button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--grey-800);
+}
+
+.rail-switch__button:hover {
+  background: var(--grey-100);
+}
+
+.rail-switch__button--active {
+  background: var(--grey-100);
+  color: var(--black);
+  box-shadow: inset 0 0 0 1.5px var(--black);
+}
+
+.rail-switch__badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--white);
+  border-radius: 50%;
+  background: var(--black);
+}
+
+/* Play/pause with a progress ring, always in the header. */
+.mini-player {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+}
+
+.mini-player:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.mini-player svg {
+  position: absolute;
+  inset: 1px;
+  transform: rotate(-90deg);
+}
+
+.mini-player__track,
+.mini-player__ring {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.mini-player__track {
+  stroke: var(--grey-100);
+}
+
+.mini-player__ring {
+  stroke: var(--black);
+  transition: stroke-dashoffset 0.25s linear;
+}
+
+.mini-player__glyph {
+  position: relative;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* A rail: its head (title, expand, close), a draggable left edge, a body. */
+.rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--white);
+  border-left: 1px solid var(--grey-100);
+}
+
+.rail--dark {
+  background: var(--black);
+  color: var(--white);
+  border-left-color: var(--grey-800);
+}
+
+.rail--resizing {
+  user-select: none;
+}
+
+.rail__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 6;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.rail__edge:hover,
+.rail--resizing .rail__edge {
+  background: var(--grey-300);
+}
+
+.rail__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 12px 14px 20px;
+  border-bottom: 1px solid var(--grey-100);
+}
+
+.rail--dark .rail__head {
+  border-bottom-color: var(--grey-800);
+}
+
+.rail__title {
+  flex: 1;
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail__action {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+}
+
+.rail__action:hover {
+  background: var(--grey-100);
+}
+
+.rail--dark .rail__action:hover {
+  background: var(--grey-800);
+}
+
+.rail__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 24px;
+}
+
+.rail__scroll > .queue-bar,
+.rail__scroll > .lost-message {
+  margin-top: 16px;
+}
+
+.rail__scroll .card {
+  margin-top: 16px;
+}
+
+.rail__actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--grey-100);
+}
+
+.rail__empty {
+  padding: 24px 20px;
+  color: var(--grey-500);
+}
+
+/* The workflow panel left the sidebar: no split line, no half-height. */
+.rail__scroll--workflow {
+  padding-top: 12px;
+}
+
+.rail .workflow {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+  overflow: visible;
+}
+
+/* Player rail: the full bar, speed + Autoplay, then the sections. */
+.player-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 20px;
+}
+
+.player-rail .player {
+  flex: none;
+}
+
+.player-rail__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+}
+
+.player-rail .audio-chips {
+  padding: 0;
+}
+
+.player-rail__sections {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.player-rail__section {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+}
+
+.player-rail__section:hover {
+  background: var(--grey-50);
+}
+
+.player-rail__section--active {
+  background: var(--grey-100);
+  font-weight: 700;
+}
+
+.player-rail__keys {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* Agents rail: the direct-to-dev box under the Dev terminal. */
+.rail__dev-compose {
+  flex: none;
+  padding: 10px 12px 14px;
+  border-top: 1px solid var(--grey-800);
+}
+
+.rail__dev-compose textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 14px;
+  resize: none;
+  outline: none;
+}
+
+/* "Just chat" / "Answer the item": swap the box, at the right of its line. */
+.chat-panel__about .link-button {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── Claude Code refinement ─────────────────────────────────────────────── */
+.sidebar {
+  border-right: 1px solid var(--border);
+}
+
+.sidebar__brand {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.nav-item {
+  border-radius: var(--radius);
+}
+
+.nav-item--active,
+.nav-item--active:hover {
+  background: var(--sidebar-active);
+}
+
+.count {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+/* The chat column: no rule under the header, as in Claude Code. */
+.main > .toolbar {
+  border-bottom: 0;
+  background: var(--white);
+}
+
+.main .toolbar h1 {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.center-chat .chat-panel__compose textarea {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--lift), var(--ring);
+}
+
+.center-chat .chat-panel__compose textarea:focus {
+  border-color: var(--grey-300);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 6%), var(--ring);
+}
+
+.msg--you {
+  border-radius: 12px;
+  background: var(--grey-50);
+}
+
+.primary {
+  background: var(--black);
+  color: var(--white);
+}
+
+.ghost {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.ghost:hover {
+  background: var(--grey-50);
+}
+
+.rail-switch__button {
+  color: var(--grey-800);
+}
+
+.rail-switch__button:hover {
+  background: var(--grey-100);
+}
+
+.rail-switch__button--active {
+  background: var(--grey-100);
+  box-shadow: none;
+}
+
+.rail-switch__badge {
+  border-color: var(--white);
+  background: var(--accent);
+}
+
+.mini-player__ring {
+  stroke: var(--accent);
+}
+
+/* A rail is a floating card with a border — expanded too, as in Claude Code. */
+.rail {
+  height: calc(100vh - 16px);
+  margin: 8px 8px 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--lift), var(--ring);
+}
+
+.layout--expanded .rail {
+  margin-left: 8px;
+}
+
+.rail--dark {
+  border-color: var(--terminal);
+  background: var(--terminal);
+}
+
+.rail__head {
+  border-bottom-color: var(--border);
+}
+
+.rail--dark .rail__head,
+.rail--dark .rail__dev-compose {
+  border-color: #3d3d3a;
+}
+
+.rail--dark .rail__action:hover {
+  background: #3d3d3a;
+}
+
+.rail__edge {
+  /* Inside the card: the card clips what overflows it. */
+  left: 0;
+  width: 8px;
+  border-radius: 14px 0 0 14px;
+}
+
+.rail--dark .tab {
+  background: #3d3d3a;
+  color: var(--white);
+}
+
+.rail--dark .tab--active {
+  background: var(--white);
+  color: var(--black);
+}
+
+/* The Agents panel's window dropdown, in place of one tab per window. */
+.window-picker {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px 6px;
+}
+
+.window-picker select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: #3d3d3a;
+  color: var(--white);
+  font: inherit;
+  font-weight: 600;
+}
+
+.window-picker__lambda,
+.window-picker__note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--grey-300);
+  font-size: 13px;
+}
+
+.rail__dev-compose textarea {
+  background: #30302e;
+  color: var(--white);
+}
+
+.rail__actions {
+  border-top-color: var(--border);
+}
+
+.player-rail__section--active {
+  background: var(--grey-50);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.player__fill,
+.player__dot--active {
+  background: var(--accent);
+}
+
+/* Measured: composer and panels r14, cards r10, nav rows 32px r8, header
+   icons r6; the brand is the serif at 20px/500. */
+.sidebar__brand {
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.nav-item {
+  border-radius: 8px;
+}
+
+.center-chat .chat-panel__compose textarea {
+  border: 0;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+.rail {
+  border: 0;
+  border-radius: 14px;
+}
+
+.rail-switch__button {
+  border-radius: 6px;
+}
+
+.card,
+.ghost {
+  border-radius: 10px;
+}
+
+.center-chat .chat-panel__log a,
+.rail a {
+  color: var(--link);
+}
+
+/* The item's summary in a ~500px rail: still the lead, not a headline. */
+.rail .lead {
+  font-size: 16px;
+  font-weight: 400;
+}
+
+/* A box wrapped for image drops still fills its line (the New pod idea box
+   was left at the browser's default width). */
+.image-drop textarea {
+  display: block;
+  width: 100%;
+}
+
+/* The Plan rail: Skip in the head; the card's top line wraps as whole
+   pieces; tighter section padding for a ~500px column. */
+/* Under the thinking dots while Lambda works: you can move on, and this
+   comes back when it's done. */
+.while-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+  margin: 24px auto 0;
+  text-align: center;
+  color: var(--grey-500);
+}
+
+.while-waiting p {
+  margin: 0;
+}
+
+.while-waiting strong {
+  display: block;
+  color: var(--grey-800);
+  font-weight: 500;
+}
+
+.rail .card {
+  margin-top: 12px;
+}
+
+.rail .card__meta {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+  font-size: 12px;
+}
+
+.rail .card__meta > * {
+  white-space: nowrap;
+}
+
+.rail .section {
+  margin-top: 8px;
+  /* 11px + the 3px playing bar = the 14px of the boxes above. */
+  padding: 12px 14px 12px 11px;
+}
+
+.rail .origin,
+.rail .led-to {
+  margin-top: 12px;
+  padding: 12px 14px;
+}
+
+/* ── Sidebar, Claude Code style (measured 2026-10-16): 32px rows, r8, 14px
+   grey labels with 18px icons; quiet 13px section heads; account at the foot. */
+.sidebar {
+  gap: 2px;
+  padding: 6px 8px 8px;
+}
+
+.sidebar__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 4px;
+}
+
+.sidebar__head .sidebar__brand {
+  padding: 0;
+}
+
+.side-icon-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--grey-800);
+}
+
+.side-icon-button:hover {
+  background: var(--sidebar-hover);
+}
+
+.side-icon {
+  flex: none;
+}
+
+.side-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  margin: 4px 0 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 50%);
+  box-shadow: var(--ring);
+  color: var(--grey-500);
+}
+
+.side-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  outline: none;
+}
+
+.side-search input::placeholder {
+  color: var(--grey-500);
+}
+
+.sidebar__nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.side-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--grey-800);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.side-row:hover {
+  background: var(--sidebar-hover);
+}
+
+.side-row--active,
+.side-row--active:hover {
+  background: var(--sidebar-active);
+  color: var(--black);
+}
+
+.side-row__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-row__end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  color: var(--grey-500);
+}
+
+.side-row__number {
+  color: var(--grey-500);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar__lists {
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  overflow-y: auto;
+}
+
+.side-section + .side-section {
+  margin-top: 14px;
+}
+
+.side-section__head {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 4px 0 10px;
+}
+
+.side-section__title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--grey-500);
+  font: inherit;
+  font-size: 13px;
+}
+
+.side-section__chevron {
+  display: grid;
+  opacity: 0;
+  transition: transform 0.15s;
+}
+
+.side-section__chevron .side-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.side-section__head:hover .side-section__chevron,
+.side-section__chevron--closed {
+  opacity: 1;
+}
+
+.side-section__chevron--closed {
+  transform: rotate(-90deg);
+}
+
+.side-section__action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-500);
+}
+
+.side-section__action:hover {
+  background: var(--sidebar-hover);
+  color: var(--black);
+}
+
+.side-section__action .side-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* A pod row: one line; its status at the right turns into ⋯ on hover. */
+.side-row--needs-you .side-row__label {
+  color: var(--black);
+  font-weight: 500;
+}
+
+.side-row--dragging {
+  opacity: 0.4;
+}
+
+.side-row__fresh {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--black);
+}
+
+.side-row__status {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+}
+
+.side-row__status .side-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.side-row__status .count {
+  min-width: 18px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+/* A Lambda at work: a small, quiet ring turning slowly. */
+.side-row__working {
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--grey-100);
+  border-top-color: var(--grey-500);
+  border-radius: 50%;
+  animation: side-spin 1.2s linear infinite;
+}
+
+@keyframes side-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-row__working {
+    animation: none;
+  }
+}
+
+.side-row__more {
+  display: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-800);
+}
+
+.side-row__more:hover {
+  background: var(--grey-300);
+}
+
+/* ⋯ shows on hover, on keyboard focus, and while its menu is open — not
+   just because a click left focus in the row. */
+.side-row--pod:hover .side-row__status,
+.side-row--pod:has(:focus-visible) .side-row__status,
+.side-row--menu .side-row__status {
+  display: none;
+}
+
+.side-row--pod:hover .side-row__more,
+.side-row--pod:has(:focus-visible) .side-row__more,
+.side-row--menu .side-row__more {
+  display: grid;
+}
+
+.side-row--pod .rename {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The foot: planning time, then the account. */
+.sidebar__foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px -8px -8px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.side-row--clock {
+  color: var(--grey-500);
+  font-size: 13px;
+}
+
+.side-row__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 5px;
+  border-radius: 50%;
+  background: var(--grey-300);
+}
+
+.side-row--ticking {
+  color: var(--black);
+}
+
+.side-row--ticking .side-row__dot {
+  background: var(--black);
+  animation: dot-pulse 1s ease-in-out infinite alternate;
+}
+
+.side-account {
+  position: relative;
+}
+
+.side-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--grey-100);
+  box-shadow: var(--ring);
+  color: var(--grey-800);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.side-row--account {
+  color: var(--black);
+}
+
+.side-account__plan {
+  color: var(--grey-500);
+}
+
+.side-account__chevron {
+  display: grid;
+  color: var(--grey-500);
+}
+
+.side-account__chevron .side-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.side-account__menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
+}
+
+.side-account__who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.side-account__who .side-avatar {
+  margin: 0;
+}
+
+/* Folded to an icon strip. */
+.sidebar--collapsed {
+  align-items: center;
+  padding: 6px 8px 8px;
+}
+
+.sidebar--collapsed .sidebar__brand {
+  display: none;
+}
+
+.sidebar--collapsed .sidebar__head {
+  padding: 0;
+}
+
+.sidebar--collapsed .side-row {
+  justify-content: center;
+  width: 40px;
+  padding: 0;
+}
+
+.sidebar--collapsed .side-row__label,
+.sidebar--collapsed .side-row__end {
+  display: none;
+}
+
+/* The strip's search button sits where the search box does, so the icons
+   below it don't move when the sidebar folds. */
+.sidebar--collapsed .side-row--search {
+  flex: none;
+  height: 32px;
+  margin: 4px 0 6px;
+}
+
+.sidebar--collapsed .sidebar__foot {
+  align-self: stretch;
+  align-items: center;
+  margin-top: auto;
+}
+
+.sidebar--collapsed .side-avatar {
+  margin: 0;
+}
+
+.sidebar--collapsed .side-account__menu {
+  right: auto;
+  width: 220px;
+}
+
+.context-menu {
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 10%), var(--ring);
+}
+
+/* Sidebar badges are quiet: a grey pill, darker grey number. */
+.side-row__status .count {
+  background: #e6e5e0;
+  color: var(--grey-800);
+}
+
+/* "Lambda" is a link to New, as Claude Code's name is. */
+button.sidebar__brand {
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  cursor: pointer;
+}
+
+/* ── Claude Code density pass (measured 2026-10-16) ──────────────────────
+   One white card holds the chat and its rail; 32px header, 13px title,
+   26px icon buttons; 14px/20px text; bubbles for your messages; a 44px
+   composer that grows; quiet sentence-case headings in the rail. */
+.sidebar {
+  border-right: 0;
+}
+
+.workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: calc(100vh - 18px);
+  margin: 9px 9px 9px 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+
+.workspace > .main,
+.workspace > .rail {
+  height: auto;
+  min-height: 0;
+}
+
+.main {
+  --main-pad: 24px;
+
+  padding: 0 var(--main-pad);
+  background: transparent;
+}
+
+.main > .toolbar {
+  gap: 4px;
+  padding: 4px 0;
+  min-height: 40px;
+  background: transparent;
+}
+
+.main .toolbar h1 {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 19px;
+}
+
+.rail-switch {
+  gap: 4px;
+}
+
+.rail-switch__button,
+.mini-player {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.rail-switch__button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.rail-switch__badge {
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-width: 1.5px;
+}
+
+.mini-player svg {
+  inset: 0;
+  width: 26px;
+  height: 26px;
+}
+
+.mini-player__glyph {
+  font-size: 8px;
+}
+
+/* The rail: a card inside the card. */
+.rail {
+  height: auto;
+  margin: 8px 8px 8px 0;
+  border-radius: 10px;
+  box-shadow: var(--ring);
+}
+
+.layout--expanded .rail {
+  margin-left: 8px;
+}
+
+.rail__head {
+  padding: 8px 8px 8px 16px;
+}
+
+.rail__title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rail__action {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.rail__scroll {
+  padding: 0 16px 20px;
+  line-height: 20px;
+}
+
+/* The chat column. The log and composer span the whole pane, through
+   .main's padding (so the scrollbar sits at the window's right edge and a
+   wheel anywhere scrolls the chat); their padding keeps the words in a
+   690px column. */
+.center-chat {
+  --chat-gutter: max(16px, calc((100% - 690px) / 2));
+
+  width: auto;
+  max-width: none;
+  margin: 0 calc(-1 * var(--main-pad, 0px));
+  line-height: 20px;
+}
+
+.center-chat .chat-panel__log {
+  padding-right: var(--chat-gutter);
+  padding-left: var(--chat-gutter);
+}
+
+.msg {
+  margin: 12px 0;
+  padding-left: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.msg--claude::before,
+.msg--you::before {
+  content: none;
+}
+
+.msg--you {
+  width: fit-content;
+  max-width: 85%;
+  margin-left: auto;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgb(11 11 11 / 5%);
+}
+
+.center-chat .chat-panel__log .msg--you {
+  padding-right: 12px;
+}
+
+.center-chat .chat-panel__log .msg--claude {
+  padding-right: 24px;
+}
+
+.msg__label {
+  margin: 4px 0 0;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.msg--you .msg__label {
+  text-align: right;
+}
+
+.msg--you .msg__listen {
+  top: 8px;
+  right: auto;
+  left: -24px;
+}
+
+.msg__listen {
+  color: var(--grey-500);
+}
+
+.md strong,
+.md b {
+  font-weight: 600;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 16px 0 6px;
+  font-size: 15.75px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.md ul,
+.md ol {
+  padding-left: 28px;
+}
+
+.chat-panel__topic {
+  margin: 20px 0 4px;
+  color: var(--grey-500);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* The composer: 44px, grows with its text; the hints sit under it. */
+.center-chat .chat-panel__compose {
+  display: flex;
+  flex-direction: column;
+  padding: 8px var(--chat-gutter) 12px;
+  border-top: 0;
+}
+
+.center-chat .chat-panel__compose textarea {
+  min-height: 44px;
+  max-height: 240px;
+  padding: 11px 14px;
+  font-size: 14px;
+  line-height: 20px;
+  field-sizing: content;
+}
+
+.center-chat .chat-panel__about {
+  order: 2;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 8px 6px 0;
+  color: var(--grey-500);
+  font-size: 13px;
+}
+
+.center-chat .chat-panel__about strong {
+  font-weight: 500;
+}
+
+.chat-panel__keys {
+  margin-left: auto;
+  color: var(--grey-500);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.center-chat .chat-panel__about .link-button {
+  margin-left: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The Plan rail's card: quiet, sentence-case headings; 14px/20px text. */
+.rail h3 {
+  color: var(--black);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.rail .section p,
+.rail .section li,
+.rail .origin p {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.rail .lead {
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.kind {
+  padding: 2px 8px;
+  background: var(--grey-100);
+  color: var(--grey-800);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.primary,
+.ghost {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.speaker-icon {
+  display: block;
+  color: var(--grey-500);
+}
+
+button:hover > .speaker-icon {
+  color: var(--black);
+}
+
+/* Sidebar touch-ups. */
+.side-row {
+  line-height: 21px;
+}
+
+.side-row--needs-you .side-row__label {
+  font-weight: 400;
+}
+
+.side-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.side-account__plan {
+  font-size: 12px;
+}
+
+.rail .card__meta {
+  font-weight: 400;
+}
+
+.rail__title {
+  line-height: 19px;
+}
+
+/* The ⌘⏎ hint on the Plan rail's Done. */
+.kbd {
+  margin-left: 6px;
+  opacity: 0.6;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.chat-panel__context {
+  min-width: 0;
+}
+
+/* Pod badges: 18px circles, centred on the same line as the section "+"
+   and the Inbox count (the row's content ends 5px short of that centre). */
+.side-row__status {
+  margin-right: -5px;
+}
+
+.side-row__status .count {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.rail__action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--grey-800);
+}
+
+.rail__action:hover {
+  color: var(--black);
+}
+
+/* Options: click one to choose it (the recommendation starts chosen). */
+.option {
+  border: 1px solid var(--border);
+}
+
+.option--pickable {
+  cursor: pointer;
+}
+
+.option--pickable:hover {
+  border-color: var(--grey-300);
+}
+
+.option--picked,
+.option--picked:hover {
+  border-color: var(--black);
+  box-shadow: inset 0 0 0 1px var(--black);
+}
+
+.option__rec {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--grey-100);
+  color: var(--grey-800);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: 2px;
+}
+
+/* ── The Plan rail's footer player: one row beside Done, a drawer above ── */
+.rail__actions {
+  position: relative;
+  display: block;
+}
+
+.plan-player__scrub {
+  position: absolute;
+  top: -7px;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: 13px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.plan-player__scrub--off {
+  cursor: default;
+}
+
+/* A 2px hairline on the footer's top edge; 4px while the pointer is on it. */
+.plan-player__progress {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  height: 2px;
+  background: var(--black);
+  transition: width 0.25s linear, height 0.1s, top 0.1s;
+}
+
+.plan-player__scrub:not(.plan-player__scrub--off):hover .plan-player__progress {
+  top: 5px;
+  height: 4px;
+}
+
+.plan-player__time {
+  position: absolute;
+  bottom: 14px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--black);
+  color: var(--surface);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Tooltips on the audio controls: above them, after a beat. Each starts at
+   its control's left edge and runs right — the controls sit at the rail's
+   left, which clips anything past it. */
+.control-tip {
+  position: relative;
+  display: inline-flex;
+}
+
+.control-tip__box {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--grey-100);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+  color: var(--grey-800);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
+}
+
+.control-tip:hover .control-tip__box,
+.control-tip:focus-within .control-tip__box {
+  opacity: 1;
+  transform: none;
+  transition-delay: 400ms;
+}
+
+.control-tip__keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--grey-500);
+}
+
+.control-tip__keys kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--white);
+  color: var(--grey-800);
+  font: inherit;
+  text-align: center;
+}
+
+.plan-player__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.plan-player__button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-800);
+}
+
+.plan-player__button:hover:not(:disabled) {
+  background: var(--grey-100);
+  color: var(--black);
+}
+
+.plan-player__button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.plan-player__button--play {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--black);
+  color: var(--surface);
+}
+
+/* Preparing the audio: a thin ring turns around Play, instead of a notice
+   that would change the footer's height. */
+.plan-player__button--loading {
+  position: relative;
+}
+
+.plan-player__button--loading::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1.5px solid var(--grey-100);
+  border-top-color: var(--grey-500);
+  border-radius: 50%;
+  animation: side-spin 1s linear infinite;
+  pointer-events: none;
+}
+
+.plan-player__button--play:hover:not(:disabled) {
+  background: var(--grey-800);
+  color: var(--surface);
+}
+
+/* A fixed width, wide enough for "2.25×", so changing speed doesn't shift
+   what follows along the row. */
+.plan-player__rate {
+  flex: none;
+  width: 60px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  height: 30px;
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-800);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-player__rate:hover {
+  background: var(--grey-100);
+  color: var(--black);
+}
+
+.plan-player__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Done keeps to one line: when there's no room for ⌘⏎ beside the label it
+   wraps to a second line, which is cut off — hidden, not squeezed. */
+.done {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  justify-content: center;
+  column-gap: 6px;
+  height: 32px;
+  overflow: hidden;
+  line-height: 32px;
+}
+
+.done__label {
+  white-space: nowrap;
+}
+
+.done .kbd {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+.plan-player__notices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.plan-player__notices .audio-chips {
+  padding: 0;
+}
+
+/* Autoplay sits in the row, after the speed. */
+.plan-player__autoplay {
+  margin-left: 6px;
+  font-size: 13px;
+  color: var(--grey-800);
+}
+
+/* No focus rings anywhere — no browser blue on whatever was last clicked.
+   (Text boxes show focus with their own border and shadow.) */
+*:focus,
+*:focus-visible {
+  outline: none;
+}
+
+/* ── Auto mode, above the account: ‹ › 2 of 3 ……… Auto [switch] ────────── */
+.side-auto {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 0 4px 0 2px;
+}
+
+.side-auto__step {
+  width: 26px;
+  height: 26px;
+}
+
+.side-auto__step:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.side-auto__step:disabled:hover {
+  background: transparent;
+}
+
+.side-auto__step .side-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.side-auto__count {
+  margin-left: 6px;
+  color: var(--grey-500);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.side-auto__switch {
+  margin-left: auto;
+  gap: 8px;
+  color: var(--grey-800);
+  font-size: 13px;
+}
+
+.side-auto--on .side-auto__switch {
+  color: var(--black);
+}
+
+/* Folded: just the switch, with the count as a badge. */
+.sidebar--collapsed .side-auto {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar--collapsed .side-auto__switch {
+  margin: 0;
+}
+
+.side-auto__badge {
+  position: absolute;
+  top: -6px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e6e5e0;
+  color: var(--grey-800);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ⋯ on hover sits on the same centre line as the badges and the "+". */
+.side-row__more {
+  margin-right: -8px;
+}
+
+.your-turn__lead {
+  margin: 12px 0 0;
+}
+
+/* The checkpoint's goal box sits below the pill row, like "How we got here". */
+.rail .checkpoint-goal {
+  margin-top: 12px;
+}
+
+/* A live card: what the dev just changed tints softly, then fades. */
+@keyframes section-updated {
+  from {
+    background: var(--grey-100);
+  }
+
+  to {
+    background: transparent;
+  }
+}
+
+.section--updated {
+  border-radius: 8px;
+  animation: section-updated 6s ease-out forwards;
+}
+
+.card__stale {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--grey-50);
+  box-shadow: var(--ring);
+  color: var(--grey-800);
+  font-size: 13px;
+}
+
+.card__stale summary {
+  cursor: pointer;
+}
+
+.card__stale pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+/* Proposed tickets: a little air between them, not just the rule. */
+.proposal__tickets > li + li {
+  margin-top: 4px;
+}
+
+/* Offsets in the chat are measured from the log itself (send-to-top scroll). */
+.chat-panel__log {
+  position: relative;
+}
+
+.chat-panel__spacer {
+  flex: none;
+}
+
+/* As in Claude Code: no card around the chat — the main area runs flush
+   to the window, and one straight line, top to bottom, divides it from the
+   sidebar. (The rail keeps its own card.) */
+.sidebar {
+  border-right: 1px solid var(--border);
+}
+
+.workspace {
+  height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Claude Code's chat area is the page's own off-white (#fcfcfb), not white. */
+.workspace {
+  background: var(--white);
+}
+
+/* ── Claude Code's tints (measured 2026-10-17): fills and lines are
+   translucent near-black over the page — 5% for shaded boxes, 10% for
+   hairlines — not one-off opaque greys. ───────────────────────────────── */
+:root {
+  --tint-5: rgb(11 11 11 / 5%);
+  --tint-10: rgb(11 11 11 / 10%);
+}
+
+/* 1. The sidebar's dividing line: one device pixel, as Claude's. */
+@media (min-resolution: 2dppx) {
+  .sidebar {
+    border-right-width: 0.5px;
+  }
+}
+
+/* 2. Shaded boxes: the 5% tint, with a 10% bar. */
+.checkpoint-goal,
+.origin,
+.chat,
+.led-to {
+  background: var(--tint-5);
+  border-left-color: var(--tint-10);
+}
+
+.origin__quote,
+.md blockquote {
+  border-left-color: var(--tint-10);
+}
+
+/* 3. Inline code: 5% fill, 10% hairline, Claude's dark red. Code blocks are
+   white panels with the hairline ring. */
+.md code {
+  padding: 1px 3px;
+  border: 0.8px solid var(--tint-10);
+  border-radius: 5px;
+  background: var(--tint-5);
+  color: #8e2626;
+  font-size: 0.9em;
+}
+
+.md pre {
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+
+.md pre code {
+  border: 0;
+  color: var(--black);
+}
+
+/* 4. The rail is an outline on the page, no fill of its own. */
+.rail {
+  background: var(--white);
+}
+
+.rail--dark {
+  background: var(--terminal);
+}
+
+/* 5. Thin, quiet scrollbars. */
+* {
+  scrollbar-color: rgb(30 30 29 / 35%) transparent;
+  scrollbar-width: thin;
+}
+
+/* The old side chat's decisions: one quiet line in the chat, list on click. */
+.chat__decided {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.chat__decided summary {
+  cursor: pointer;
+}
+
+.chat__decided ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  color: var(--grey-800);
+}
+
+/* The sidebar brand on load: the λ (which is also the sidebar toggle) starts
+   just past the word and slides left onto the toggle, fading in, as the word
+   fades in. --brand-from is that distance, measured in Sidebar. */
+.sidebar__brand-word {
+  display: inline-block;
+}
+
+.sidebar__brand-text {
+  display: inline-block;
+  animation: brand-word-in 900ms ease 350ms both;
+}
+
+.sidebar__brand-mark {
+  width: 15px;
+  height: 18px;
+  color: var(--black);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: brand-mark-in 900ms ease both;
+}
+
+.sidebar--collapsed .sidebar__brand-mark,
+.sidebar--brand-leave .sidebar__brand-mark,
+.sidebar--brand-arrive .sidebar__brand-mark {
+  animation: none;
+}
+
+/* The sidebar sliding shut: the word slides left into the λ and fades;
+   opening, back out of it. */
+.sidebar--brand-leave .sidebar__brand-text {
+  animation: brand-word-leave 180ms ease both;
+}
+
+.sidebar--brand-arrive .sidebar__brand-text {
+  animation: brand-word-arrive 220ms ease both;
+}
+
+/* The sidebar sliding open or shut (App: SIDEBAR_SLIDE_MS): its column and
+   the rail beside the chat ease to their new widths together, while the
+   sidebar stays laid out open inside, clipped, so nothing re-wraps. Its words
+   fade as the edge passes over them; the icons stay where they are. */
+.layout--sidebar-opening,
+.layout--sidebar-closing,
+.layout--sidebar-opening .workspace,
+.layout--sidebar-closing .workspace {
+  transition: grid-template-columns 220ms ease;
+}
+
+.layout--sidebar-opening .sidebar,
+.layout--sidebar-closing .sidebar {
+  overflow: hidden;
+}
+
+.layout--sidebar-opening .sidebar > *,
+.layout--sidebar-closing .sidebar > * {
+  min-width: 272px;
+}
+
+.layout--sidebar-closing
+  :is(
+    .sidebar__lists,
+    .side-row__label,
+    .side-row__end,
+    .side-account__who,
+    .side-account__plan,
+    .side-account__chevron,
+    .side-auto__count
+  ) {
+  animation: sidebar-words-out 140ms ease both;
+}
+
+.layout--sidebar-opening
+  :is(
+    .sidebar__lists,
+    .side-row__label,
+    .side-row__end,
+    .side-account__who,
+    .side-account__plan,
+    .side-account__chevron,
+    .side-auto__count
+  ) {
+  animation: sidebar-words-in 220ms ease 60ms both;
+}
+
+@keyframes sidebar-words-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sidebar-words-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes brand-word-leave {
+  to {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes brand-word-arrive {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes brand-word-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes brand-mark-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--brand-from, 0));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar__brand-text,
+  .sidebar__brand-mark {
+    animation: none;
+  }
+}
+
+/* ── versions ──────────────────────────────────────────────────────────────
+   Under the item's meta: [v8 ▾] and the time on the checkpoint, then
+   "Discussed in chat". On each card inside it (a screen, a ticket, a
+   decision): "changed v8 · 2m ▾", opening the same version list with the
+   versions that touched that card marked. Cards the version on screen
+   changed get a soft tint. */
+.card__versions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--grey-500);
+}
+
+.versions {
+  position: relative;
+  display: inline-flex;
+}
+
+.versions__line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.versions__pill {
+  padding: 1px 8px;
+  border: 0.8px solid var(--tint-10);
+  border-radius: 6px;
+  background: var(--tint-5);
+  color: var(--black);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.versions__pill:hover {
+  background: var(--tint-10);
+}
+
+.versions__mark {
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-500);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.versions__mark:hover {
+  background: var(--tint-5);
+  color: var(--black);
+}
+
+.screen__head .versions {
+  margin-left: auto;
+}
+
+.screen__head .versions + .icon {
+  margin-left: 0;
+}
+
+.versions__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 360px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 0.8px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 10%);
+  color: var(--black);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.versions__line .versions__menu {
+  right: auto;
+  left: 0;
+}
+
+.versions__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 8px 8px;
+  border-bottom: 0.8px solid var(--border);
+  margin-bottom: 4px;
+  color: var(--grey-500);
+}
+
+.versions__row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-500);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Versions that touched the card read in full; the rest are greyed. */
+.versions__row--touched {
+  color: var(--black);
+}
+
+.versions__row:hover,
+.versions__row--on {
+  background: var(--tint-5);
+}
+
+.versions__v {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.versions__ms {
+  font-variant-numeric: tabular-nums;
+}
+
+/* An earlier version on screen: say so, above everything. */
+.versions__old {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 0.8px solid var(--tint-10);
+  border-radius: 8px;
+  background: var(--tint-5);
+  font-size: 13px;
+}
+
+/* The version on screen changed this card. */
+.card--changed-here {
+  background: var(--tint-5);
+}
+
+.decision__mark {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.decision__mark:empty {
+  display: none;
+}
+
+.proposal__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+/* The Plan rail's footer is as tall as its header (8 + 30 + 8 + 1px border),
+   its row centred in it; audio notices, when there are any, add to it. */
+.rail__actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 47px;
+  padding: 0 16px;
+}
+
+/* A decision told under the screen that shows it (CP4). */
+.screen__decisions {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.screen__decisions li {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--grey-300);
+}
+
+.screen__decision-head {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+/* A picture in an agent's message (a pod's screenshot). */
+.md__img {
+  display: block;
+  max-width: 100%;
+  margin: 8px 0;
+  border: 1px solid var(--grey-300);
+  border-radius: 8px;
+}
+
+/* ── prototypes: the chat card, the focus view, the lightbox, Made here ── */
+.chip {
+  background: var(--surface);
+}
+
+.chip--on {
+  border-color: var(--black);
+  background: var(--black);
+  color: var(--white);
+}
+
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--grey-100);
+}
+
+.seg__button {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-800);
+  font-size: 13px;
+}
+
+.seg__button--on {
+  background: var(--surface);
+  color: var(--black);
+  box-shadow: var(--ring);
+  font-weight: 600;
+}
+
+.proto-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+  margin: 10px 0 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--ring), var(--lift);
+}
+
+.proto-card--missing {
+  flex-direction: row;
+  align-items: baseline;
+}
+
+.proto-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.proto-card__kicker,
+.made__kicker {
+  margin: 0;
+  color: var(--grey-500);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.proto-card__version {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--grey-800);
+  font-size: 12px;
+}
+
+.proto-card__latest {
+  color: #2b8a3e;
+}
+
+.proto-card__still {
+  position: relative;
+  display: block;
+  max-height: 360px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--grey-300);
+  border-radius: 8px;
+  background: var(--grey-50);
+  cursor: zoom-in;
+}
+
+.proto-card__still img {
+  display: block;
+  width: 100%;
+}
+
+.proto-card__try {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--black);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+
+.proto-card__still:hover .proto-card__try,
+.proto-card__still:focus-visible .proto-card__try {
+  background: #2a2a28;
+}
+
+.proto-card__boards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.proto-card__board {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--grey-300);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--grey-800);
+  font-size: 12px;
+  text-align: left;
+}
+
+.proto-card__board img {
+  width: 100%;
+  height: 72px;
+  border-radius: 4px;
+  object-fit: cover;
+  object-position: top;
+}
+
+.proto-card__board--on {
+  border-color: var(--black);
+  box-shadow: 0 0 0 1px var(--black);
+  color: var(--black);
+}
+
+.proto-card__note {
+  margin: 0;
+  color: var(--grey-800);
+  font-size: 13px;
+}
+
+.proto-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.proto-card__foot a {
+  margin-left: auto;
+}
+
+.screen__picture-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.msg-flash {
+  animation: msg-flash 1.6s ease-out;
+}
+
+@keyframes msg-flash {
+  0%,
+  40% {
+    border-radius: 8px;
+    background: #fff3bf;
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* The focus view: the live prototype, over the dimmed inbox. */
+.proto-view,
+.lightbox {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  background: rgb(11 11 11 / 55%);
+}
+
+.proto-view {
+  display: flex;
+  padding: 10px;
+}
+
+.proto-view__panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 48px rgb(0 0 0 / 30%);
+}
+
+.proto-view__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--grey-100);
+}
+
+.proto-view__zoom {
+  font-size: 12px;
+}
+
+.proto-view__pick {
+  max-width: 100%;
+  padding: 3px 6px;
+  font-size: 13px;
+}
+
+.proto-view__title {
+  font-size: 15px;
+}
+
+.proto-view__version {
+  color: var(--grey-800);
+  font-size: 13px;
+}
+
+.proto-view__spacer {
+  flex: 1;
+}
+
+.proto-view__tool {
+  padding: 4px 10px;
+  border: 1px solid var(--grey-300);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--black);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.proto-view__stage {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 16px;
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+  background: var(--grey-50);
+}
+
+.proto-view__stage--phone {
+  align-items: center;
+}
+
+.proto-view__column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.proto-view__column-head {
+  align-self: flex-start;
+  font-size: 13px;
+}
+
+.proto-view__frame-box {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--ring), 0 4px 16px rgb(0 0 0 / 8%);
+}
+
+.proto-view__stage--phone .proto-view__frame-box {
+  border-radius: 28px;
+  box-shadow: 0 0 0 8px var(--black), 0 8px 28px rgb(0 0 0 / 25%);
+}
+
+.proto-view__frame-box iframe {
+  display: block;
+  border: 0;
+  background: var(--surface);
+  transform-origin: 0 0;
+}
+
+.proto-view__size {
+  font-size: 12px;
+}
+
+/* A picture, full size; ← → steps through every picture the Lambda made. */
+.lightbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 16px;
+}
+
+.lightbox__figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 120px);
+  max-height: 100%;
+  margin: 0;
+}
+
+.lightbox__figure img {
+  max-width: 100%;
+  max-height: calc(100vh - 110px);
+  border-radius: 8px;
+  background: var(--surface);
+  object-fit: contain;
+}
+
+.lightbox__figure figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--white);
+  font-size: 13px;
+}
+
+.lightbox__figure figcaption .muted {
+  color: var(--grey-300);
+}
+
+.lightbox__step,
+.lightbox__close {
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 15%);
+  color: var(--white);
+}
+
+.lightbox__step {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.lightbox__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+}
+
+/* Made here: everything this Lambda made. */
+.made {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 12px 16px 24px;
+}
+
+.made__tabs {
+  align-self: flex-start;
+}
+
+.made__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.made__proto {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--grey-300);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  cursor: zoom-in;
+}
+
+.made__proto img {
+  width: 100%;
+  max-height: 200px;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: top;
+}
+
+.made__proto-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 2px;
+  font-size: 13px;
+}
+
+.made__jump,
+.made__unsent {
+  align-self: flex-start;
+  font-size: 12px;
+}
+
+.made__older {
+  font-size: 12px;
+}
+
+.made__older ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.made__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.made__thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--grey-300);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--grey-800);
+  font-size: 11px;
+  cursor: zoom-in;
+}
+
+.made__thumb img {
+  width: 100%;
+  height: 72px;
+  border-radius: 5px;
+  object-fit: cover;
+  object-position: top;
+}
+
+.made__thumb span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* On a phone: the focus view and the lightbox take the whole screen. */
+@media (max-width: 700px) {
+  .proto-view {
+    padding: 0;
+  }
+
+  .proto-view__panel {
+    border-radius: 0;
+  }
+
+  .proto-view__board-name {
+    display: none;
+  }
+
+  .lightbox__figure {
+    max-width: 100%;
+  }
+
+  .lightbox__step {
+    position: absolute;
+    bottom: 20px;
+  }
+
+  .lightbox__step--back {
+    left: 20px;
+  }
+
+  .lightbox__step--next {
+    right: 20px;
+  }
+}
+
+/* ── Lambda: sign-in, account pages, projects ─────────────────── */
+
+.sign-in {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--white);
+}
+
+.sign-in__card {
+  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--ring), var(--lift);
+}
+
+.sign-in__brand {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  text-align: center;
+}
+
+.sign-in__title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.sign-in__label {
+  font-size: 13px;
+}
+
+.sign-in__code {
+  font: inherit;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.sign-in__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.sign-in__hint {
+  margin: 4px 0 0;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ── Lambda: first run (/setup) and the Claude renewal banner ──── */
+
+.setup {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--white);
+  overflow-y: auto;
+}
+
+.setup__card {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--ring), var(--lift);
+}
+
+.setup__brand {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 18px;
+}
+
+.setup__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup__step {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--grey-800);
+}
+
+.setup__step:disabled {
+  cursor: default;
+  color: var(--grey-500);
+}
+
+.setup__step--current {
+  color: var(--black);
+  font-weight: 600;
+}
+
+.setup__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup__body p {
+  margin: 0;
+}
+
+.setup__question {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.setup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.setup__actions--start {
+  justify-content: flex-start;
+}
+
+.setup__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A row's input takes the room beside its button. */
+.setup__row input {
+  flex: 1 1 200px;
+}
+
+.setup__row input,
+.setup__field input {
+  min-width: 0;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.setup__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.setup__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.setup__progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.setup__bar {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  background: var(--grey-100);
+  border-radius: 4px;
+}
+
+.setup__bar-fill {
+  height: 100%;
+  background: var(--black);
+  transition: width 0.3s ease;
+}
+
+.setup__bar--moving .setup__bar-fill {
+  position: absolute;
+  width: 30%;
+  animation: setup-bar 1.4s ease-in-out infinite;
+}
+
+@keyframes setup-bar {
+  from {
+    left: -30%;
+  }
+
+  to {
+    left: 100%;
+  }
+}
+
+.setup__browser {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.setup__browser p {
+  margin: 0;
+}
+
+.setup__line {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.setup__lines {
+  max-height: 240px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--white);
+  background: var(--terminal);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.setup__error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.setup__folders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setup__folder-list {
+  max-height: 280px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.setup__folder-list button {
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+}
+
+.setup__folder-list button:hover {
+  background: var(--grey-50);
+}
+
+.setup__folder-list .muted {
+  padding: 6px 8px;
+}
+
+.with-banner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.with-banner__app {
+  flex: 1;
+  min-height: 0;
+}
+
+.with-banner .layout {
+  height: 100%;
+}
+
+.renewal-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  background: var(--grey-100);
+  border-bottom: 1px solid var(--border);
+}
+
+.renewal-banner button {
+  margin-left: auto;
+}
+
+.account-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 0 32px;
+}
+
+.account-page__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.account-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius);
+  box-shadow: var(--ring);
+  background: var(--surface);
+}
+
+.account-list__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+}
+
+.account-list__row + .account-list__row {
+  border-top: 1px solid var(--border);
+}
+
+.account-list__row button {
+  margin-left: auto;
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--ring), var(--lift);
+}
+
+.dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.dialog__field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.dialog__field input {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialog__code {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.dialog__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.dialog__steps p {
+  margin: 4px 0 0;
+}
+
+.dialog__code code {
+  overflow-wrap: anywhere;
+}
+
+.dialog__big-code {
+  margin: 8px 0;
+  font-size: 32px;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.project-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.new-chat__project {
+  position: relative;
+  align-self: flex-start;
+}
+
+.new-chat__project-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  z-index: 20;
+}
+
+.new-chat__project-menu hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+.side-row--waiting {
+  cursor: default;
+}
+
+.side-row__sub {
+  display: block;
+  font-size: 12px;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A failed start's reason: shown whole, not cut off. */
+.side-row__sub--error {
+  color: var(--danger);
+  opacity: 1;
+  white-space: normal;
+}
+
+.context-menu .context-menu__on {
+  font-weight: 600;
+}
+
+.analytics__warning {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgb(142 38 38 / 6%);
+  color: var(--danger);
+}
+
+.analytics__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.analytics__table th,
+.analytics__table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics__table th:not(:first-child),
+.analytics__table td:not(:first-child) {
+  text-align: right;
+}
+
+.process h3 {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.process__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Settings → Design system: one line per fact, view-only once it exists. */
+.design-system {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.design-system p {
+  margin: 0;
+}
+
+.design-system__issue {
+  padding-left: 16px;
+}
+
+.design-system__make {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* ── building pods ─────────────────────────────────────────────────────────
+   The sidebar's Building rows, the Product manager chat's progress bubbles,
+   and the Workflow and Tickets rails. */
+.side-row__dot--building,
+.side-row__dot--testing,
+.side-row__dot--shipping {
+  background: var(--success);
+}
+
+.side-row__dot--blocked {
+  background: var(--danger);
+}
+
+.side-row--building .side-row__label {
+  display: flex;
+  flex-direction: column;
+}
+
+.build-bubble {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  align-items: baseline;
+  margin: 4px 0;
+  padding-left: 22px;
+  color: var(--grey-800);
+  font-size: 13px;
+}
+
+/* Markdown after the role's name; a line break in it is a line on screen. */
+.build-bubble .md {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.build-bubble .md p {
+  white-space: pre-line;
+}
+
+/* The answer box under an item waiting on the owner. */
+.build-answer {
+  display: flex;
+  flex-basis: 100%;
+  gap: 6px;
+  align-items: flex-end;
+  margin-top: 6px;
+}
+
+.build-answer textarea {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  resize: vertical;
+}
+
+.build-bubble__dot {
+  color: var(--grey-500);
+}
+
+.segmented {
+  display: inline-flex;
+  margin: 12px 0;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--grey-100);
+}
+
+.segmented button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.segmented button.segmented--on {
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+
+.build-workflow__title {
+  margin: 12px 0;
+  font-size: 14px;
+}
+
+.build-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.build-step {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 96px 48px;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+/* Whole run: no mark, and a share column before the bar. */
+.build-step--whole {
+  grid-template-columns: minmax(0, 1fr) 40px 96px 56px;
+}
+
+.build-step--todo {
+  color: var(--grey-500);
+}
+
+/* Skipped: never ran, so muted like a step still to come. */
+.build-step--skipped {
+  color: var(--grey-500);
+}
+
+.build-step--active {
+  font-weight: 600;
+}
+
+.build-step--total {
+  display: block;
+  margin-top: 8px;
+  color: var(--grey-800);
+}
+
+.build-step__time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.build-step__shots,
+.build-step__stages {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--grey-800);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.build-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--grey-100);
+}
+
+.build-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--black);
+}
+
+.build-shot {
+  position: relative;
+  width: 56px;
+  height: 40px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--grey-50);
+  cursor: pointer;
+}
+
+.build-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.build-shot--failed {
+  border-color: var(--danger);
+}
+
+.build-shot__fail {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* The Visual check's rounds: one expected | actual pair per picture. */
+.build-step__pairs {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.build-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.build-pair {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  width: 116px;
+  height: 40px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--grey-50);
+  cursor: pointer;
+}
+
+.build-pair img {
+  width: 50%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.build-pair--missed {
+  border-color: var(--danger);
+}
+
+.visual-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.visual-pair figure {
+  margin: 0;
+}
+
+.visual-pair figcaption {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.visual-pair__issues {
+  margin: 12px 0 0;
+  padding-left: 18px;
+}
+
+.build-bubble__pictures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.build-bubble__pictures img {
+  max-width: 100%;
+  max-height: 240px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.build-compare {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.build-compare dd {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+
+.build-compare dd .build-bar {
+  flex: 1;
+}
+
+.build-tickets__head {
+  margin: 16px 0 6px;
+  color: var(--grey-500);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.build-tickets ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.build-ticket {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.build-ticket:hover {
+  background: var(--grey-50);
+}
+
+.build-ticket__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.build-ticket__time {
+  color: var(--grey-800);
+  font-variant-numeric: tabular-nums;
+}
+
+.dialog--screenshot {
+  position: fixed;
+  inset: 40px;
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.screenshot__full {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.screenshot__url,
+.screenshot__console {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.screenshot__console {
+  color: var(--danger);
+}
+
+/* ── the Tickets screen, as Linear lays issues out ─────────────────────────
+   A page of its own: no toolbar or rail beside it. The list runs edge to
+   edge of the card; a ticket's page puts its properties on the right. */
+.main > .toolbar[hidden] {
+  display: none;
+}
+
+.main--tickets > .main__scroll {
+  margin: 0 calc(-1 * var(--main-pad));
+  padding-bottom: 0;
+}
+
+.tickets-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.tickets,
+.ticket {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.tickets__head,
+.ticket__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border-bottom: 1px solid rgb(11 11 11 / 8%);
+  background: var(--white);
+}
+
+.tickets__title {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.tickets__count {
+  margin-left: 6px;
+  color: #6f6d68;
+  font-weight: 400;
+}
+
+.tk-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--black);
+  font-size: 13.5px;
+  line-height: 1.2;
+}
+
+.tk-button:hover {
+  background: var(--grey-50);
+}
+
+.tk-button--primary {
+  padding: 7px 12px;
+  border-color: var(--black);
+  background: var(--black);
+  color: var(--surface);
+}
+
+.tk-button--primary:hover {
+  background: #2a2a28;
+}
+
+.tk-button--primary:disabled {
+  border-color: var(--grey-300);
+  background: var(--grey-300);
+  cursor: default;
+}
+
+.tk-button--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--grey-800);
+}
+
+.tk-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--black);
+}
+
+.tk-icon-button:disabled {
+  color: var(--grey-300);
+  cursor: default;
+}
+
+.tk-icon-button--bare {
+  border-color: transparent;
+  background: transparent;
+  color: #6f6d68;
+}
+
+/* Filter chips, "+ Add filter" and the search box. */
+.tickets__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 28px;
+  border-bottom: 1px solid rgb(11 11 11 / 8%);
+}
+
+.tk-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.tk-filter-chip strong {
+  font-weight: 500;
+}
+
+.tk-filter-chip__field {
+  color: #6f6d68;
+}
+
+.tk-filter-chip button {
+  display: grid;
+  place-items: center;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: #6f6d68;
+}
+
+.tk-add-filter {
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: #6f6d68;
+  font-size: 13px;
+}
+
+.tk-add-filter:hover {
+  color: var(--black);
+}
+
+.tickets__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: #6f6d68;
+}
+
+.tickets__search:focus-within {
+  box-shadow: var(--ring);
+}
+
+.tickets__search input {
+  width: 140px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+}
+
+.tickets__list {
+  flex: 1;
+  container-type: inline-size;
+}
+
+.tickets__offline,
+.tickets__empty,
+.tickets__loading {
+  margin: 12px 28px;
+}
+
+/* A group: a faint ▾ that folds it, its status icon, name and count. */
+.tk-group__head {
+  display: flex;
+  align-items: center;
+  padding: 0 22px 0 6px;
+  border-bottom: 1px solid rgb(11 11 11 / 6%);
+  background: var(--grey-50);
+}
+
+.tk-group__toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  text-align: left;
+}
+
+.tk-group__chevron {
+  color: #b9b7b1;
+  transition: transform 120ms ease;
+}
+
+.tk-group__chevron--folded {
+  transform: rotate(-90deg);
+}
+
+.tk-group__name {
+  font-weight: 500;
+}
+
+.tk-group__count {
+  color: #6f6d68;
+}
+
+.tk-group__add {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #8a8882;
+  opacity: 0;
+}
+
+.tk-group__head:hover .tk-group__add,
+.tk-group__add:focus-visible {
+  opacity: 1;
+}
+
+.tk-group__add:hover {
+  background: var(--grey-100);
+  color: var(--black);
+}
+
+/* One row per ticket, 44px, everything on one line. */
+.tk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 44px;
+  padding: 0 28px;
+  border: 0;
+  border-bottom: 1px solid rgb(11 11 11 / 5%);
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  text-align: left;
+}
+
+.tk-row:hover,
+.tk-row--at {
+  background: var(--grey-50);
+}
+
+.tk-row:focus-visible {
+  outline: 2px solid var(--black);
+  outline-offset: -2px;
+}
+
+.tk-row--drop {
+  box-shadow: inset 0 -2px 0 var(--black);
+}
+
+.tk-row[draggable='true'] {
+  cursor: grab;
+}
+
+.tk-row__priority {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+}
+
+.tk-row__id {
+  flex: none;
+  box-sizing: border-box;
+  width: 92px;
+  color: #6f6d68;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A ticket under its epic: indented, with the epic's line down its side. */
+.tk-row--child .tk-row__id {
+  position: relative;
+  width: 106px;
+  padding-left: 14px;
+}
+
+.tk-row--child .tk-row__id::before {
+  position: absolute;
+  top: -14px;
+  bottom: -14px;
+  left: 2px;
+  width: 1px;
+  background: rgb(11 11 11 / 12%);
+  content: '';
+}
+
+.tk-row__title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tk-row__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tk-row__reason {
+  flex: none;
+  color: var(--danger);
+}
+
+.tk-row__commit {
+  flex: none;
+  color: var(--grey-800);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.tk-row__assignee {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 180px;
+  overflow: hidden;
+  color: var(--grey-800);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.tk-row__assignee span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tk-row__assignee--none {
+  color: #8a8882;
+}
+
+.tk-row__date {
+  flex: none;
+  width: 56px;
+  color: #6f6d68;
+  font-size: 13px;
+  text-align: right;
+}
+
+.tk-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--grey-800);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.tk-chip--progress {
+  padding: 1px 8px;
+}
+
+.tk-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--label);
+}
+
+.tk-chip__remove {
+  display: grid;
+  place-items: center;
+  margin-right: -4px;
+  padding: 1px;
+  border: 0;
+  background: transparent;
+  color: #8a8882;
+}
+
+.tk-chip--add {
+  padding: 0 8px;
+  border-style: dashed;
+  color: #6f6d68;
+}
+
+.tickets__keys {
+  margin: 0;
+  padding: 14px 28px;
+  border-top: 1px solid rgb(11 11 11 / 6%);
+  color: #6f6d68;
+  font-size: 12.5px;
+}
+
+.tickets__keys kbd {
+  padding: 0 5px;
+  border: 1px solid rgb(11 11 11 / 15%);
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+/* The one icon set: status, priority and computer. */
+.status-icon {
+  flex: none;
+}
+
+.status-icon--inbox,
+.status-icon--planning,
+.status-icon--canceled {
+  color: #8a8882;
+}
+
+.status-icon--ready {
+  color: var(--grey-800);
+}
+
+.status-icon--building {
+  color: var(--amber);
+}
+
+.status-icon--blocked {
+  color: var(--danger);
+}
+
+.status-icon--shipped {
+  color: var(--shipped);
+}
+
+.priority-icon {
+  flex: none;
+  color: var(--grey-800);
+}
+
+.priority-icon__on {
+  fill: var(--grey-800);
+}
+
+.priority-icon__off {
+  fill: #d6d4cf;
+}
+
+.priority-icon--urgent {
+  color: var(--urgent);
+}
+
+.priority-icon--none {
+  color: #8a8882;
+  font-size: 12px;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+.computer-icon {
+  flex: none;
+}
+
+/* A ticket that's yours, by hand: your initials, as in the account row. */
+.tk-avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--grey-300);
+  color: var(--black);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.state-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border-radius: 50%;
+  background: #c9c7c1;
+}
+
+.state-dot--building,
+.state-dot--testing,
+.state-dot--shipping {
+  background: var(--success);
+}
+
+.state-dot--blocked {
+  background: var(--danger);
+}
+
+.state-dot--paused {
+  border: 1.5px solid #8a8882;
+  background: transparent;
+}
+
+.state-dot--offline {
+  border: 1.5px dashed #8a8882;
+  background: transparent;
+}
+
+/* Linear's dropdowns: a filter box, then the options. */
+.menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.ticket-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 20;
+  width: 260px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--ring), 0 8px 28px rgb(0 0 0 / 10%);
+  text-align: left;
+}
+
+.ticket-menu--left {
+  left: 0;
+}
+
+.ticket-menu--right {
+  right: 0;
+}
+
+.ticket-menu__filter {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid rgb(11 11 11 / 8%);
+  outline: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.ticket-menu__list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.ticket-menu__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  text-align: left;
+}
+
+.ticket-menu__option--at {
+  background: var(--grey-50);
+}
+
+.ticket-menu__option:disabled {
+  color: var(--grey-500);
+}
+
+.ticket-menu__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+}
+
+.ticket-menu__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.ticket-menu__hint {
+  display: block;
+  color: #6f6d68;
+  font-size: 12px;
+}
+
+.ticket-menu__trail {
+  color: #6f6d68;
+  font-size: 12px;
+}
+
+.ticket-menu__tick {
+  flex: none;
+}
+
+.ticket-menu__empty {
+  margin: 6px 10px;
+  color: #6f6d68;
+}
+
+/* In Properties, a menu is as wide as the column, as Linear's. */
+.ticket__props .ticket-menu {
+  right: 0;
+  left: 0;
+  width: auto;
+}
+
+/* The + beside the labels is small: its menu spans the Labels row, as wide
+   as the other property menus, not the + itself. */
+.ticket__props .tk-labels {
+  position: relative;
+}
+
+.ticket__props .tk-labels .menu-anchor {
+  position: static;
+}
+
+/* A ticket's page: the main column, then Properties. */
+.ticket__crumbs {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #6f6d68;
+}
+
+.ticket__crumb {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6f6d68;
+  font: inherit;
+  white-space: nowrap;
+}
+
+button.ticket__crumb:hover {
+  color: var(--black);
+}
+
+.ticket__crumb--here {
+  overflow: hidden;
+  color: var(--black);
+  text-overflow: ellipsis;
+}
+
+.ticket__position {
+  color: #6f6d68;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket__loading {
+  margin: 24px 28px;
+}
+
+.ticket__body {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.ticket__main {
+  display: flex;
+  flex: 999 1 520px;
+  flex-direction: column;
+  gap: 18px;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 900px;
+  padding: 36px 56px 28px;
+}
+
+.ticket__notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+  font-size: 13.5px;
+}
+
+.ticket__title {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ticket__parent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 0;
+  color: #6f6d68;
+}
+
+.ticket__parent-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+}
+
+.ticket__description {
+  color: #1d1d1b;
+  line-height: 1.6;
+}
+
+/* The description is always the editor, as in Linear: no box, no buttons. */
+.md-editor .ProseMirror {
+  min-height: 48px;
+  outline: 0;
+}
+
+.md-editor .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.md-editor .ProseMirror p {
+  margin: 0 0 10px;
+}
+
+.md-editor .ProseMirror h1,
+.md-editor .ProseMirror h2,
+.md-editor .ProseMirror h3 {
+  margin: 18px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.md-editor .ProseMirror h1 {
+  font-size: 19px;
+}
+
+.md-editor .ProseMirror ul,
+.md-editor .ProseMirror ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.md-editor .ProseMirror li p {
+  margin: 0;
+}
+
+.md-editor .ProseMirror code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--grey-100);
+  font-size: 0.92em;
+}
+
+.md-editor .ProseMirror pre {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--grey-100);
+  overflow-x: auto;
+}
+
+.md-editor .ProseMirror pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.md-editor .ProseMirror blockquote {
+  margin: 0 0 10px;
+  padding-left: 14px;
+  border-left: 2px solid var(--grey-300);
+  color: var(--grey-800);
+}
+
+.md-editor .ProseMirror a {
+  color: var(--link);
+  cursor: text;
+}
+
+.md-editor .ProseMirror img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.md-editor .ProseMirror table {
+  border-collapse: collapse;
+  margin: 0 0 10px;
+}
+
+.md-editor .ProseMirror td,
+.md-editor .ProseMirror th {
+  padding: 4px 8px;
+  border: 1px solid var(--grey-300);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-editor .ProseMirror td p,
+.md-editor .ProseMirror th p {
+  margin: 0;
+}
+
+.md-editor .ProseMirror p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: #8a8882;
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.md-editor__problem {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* Select text: Linear's floating formatting bar. */
+.md-bar {
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--ring), 0 8px 24px rgb(0 0 0 / 12%);
+}
+
+.md-bar__tool {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-800);
+}
+
+.md-bar__tool:hover {
+  background: var(--grey-100);
+  color: var(--black);
+}
+
+.md-bar__tool--on {
+  background: var(--grey-100);
+  color: var(--black);
+}
+
+.md-bar__text {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.md-bar__line {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: rgb(11 11 11 / 12%);
+}
+
+.md-bar__link {
+  width: 240px;
+  padding: 4px 8px;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 13px;
+}
+
+.md-bar--linking .md-bar__tool,
+.md-bar--linking .md-bar__line {
+  display: none;
+}
+
+.ticket__activity {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgb(11 11 11 / 8%);
+}
+
+.ticket__activity h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ticket__event {
+  display: flex;
+  gap: 10px;
+  color: var(--grey-800);
+  font-size: 13.5px;
+}
+
+.ticket__event strong {
+  color: var(--black);
+  font-weight: 500;
+}
+
+.ticket__event-dot {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  margin: 8px 7px 0;
+  border-radius: 50%;
+  background: #8a8882;
+}
+
+.ticket__talk {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 10%);
+}
+
+.ticket__talk--you {
+  background: var(--grey-50);
+  box-shadow: none;
+}
+
+.ticket__talk-who {
+  color: #6f6d68;
+  font-size: 12.5px;
+}
+
+.ticket__talk p {
+  margin: 0;
+}
+
+.ticket__quiet,
+.ticket__sent {
+  margin: 0;
+}
+
+.ticket__comment {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 12%);
+}
+
+.ticket__comment textarea {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  resize: none;
+}
+
+.ticket__comment-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #6f6d68;
+  font-size: 12.5px;
+}
+
+.ticket__props {
+  display: flex;
+  flex: 1 1 300px;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  max-width: 340px;
+  padding: 28px 24px;
+  border-left: 1px solid rgb(11 11 11 / 8%);
+}
+
+.tk-props__title {
+  margin: 0 0 8px;
+  color: #6f6d68;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ticket__props > .menu-anchor {
+  display: flex;
+}
+
+.tk-prop-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  text-align: left;
+}
+
+button.tk-prop-line:hover,
+.tk-prop-line--open {
+  background: var(--grey-100);
+}
+
+button.tk-prop-line:disabled {
+  color: var(--grey-800);
+  cursor: default;
+}
+
+button.tk-prop-line:disabled:hover {
+  background: transparent;
+}
+
+.tk-prop-line--inline {
+  padding: 4px 8px;
+}
+
+.tk-prop-line__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-prop-line__lock {
+  display: grid;
+  color: #8a8882;
+}
+
+.tk-prop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.tk-prop__heading {
+  color: #6f6d68;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tk-prop__value {
+  padding: 0 8px;
+}
+
+.tk-prop__value .menu-anchor {
+  display: flex;
+  margin: 0 -8px;
+}
+
+.tk-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tk-source {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.tk-source code {
+  font-size: 12.5px;
+}
+
+/* New ticket: Linear's dialog. */
+.tk-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: start center;
+  padding: 12vh 16px 16px;
+  background: rgb(11 11 11 / 18%);
+}
+
+.tk-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(680px, 100%);
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--ring), 0 24px 60px rgb(0 0 0 / 18%);
+}
+
+.tk-dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tk-dialog__head h2 {
+  flex: 1;
+  margin: 0;
+  color: #6f6d68;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tk-dialog__project {
+  padding: 4px 8px;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.tk-dialog__title {
+  padding: 6px 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.tk-dialog__description {
+  border: 0;
+  outline: 0;
+  font: inherit;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.tk-dialog__props {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--grey-800);
+  font-size: 13px;
+}
+
+.tk-pill:hover,
+.tk-pill--open {
+  background: var(--grey-50);
+}
+
+.tk-dialog__problem {
+  margin: 0;
+  color: var(--danger);
+}
+
+.tk-dialog__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px -18px -16px;
+  padding: 12px 18px;
+  border-top: 1px solid rgb(11 11 11 / 8%);
+}
+
+.tk-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--ring), 0 8px 28px rgb(0 0 0 / 12%);
+}
+
+/* The sidebar's Building rows: offline greyed, paused bars, the ⋯ menu. */
+.side-row--offline .side-row__label {
+  color: var(--grey-500);
+}
+
+.side-row__dot--offline {
+  border: 1.5px dashed var(--grey-500);
+  background: transparent;
+}
+
+.side-row__paused {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  color: var(--grey-500);
+}
+
+.side-row--building .side-row__more {
+  align-self: center;
+}
+
+.context-menu button .side-icon {
+  margin-right: 6px;
+  vertical-align: -4px;
+}
+
+/* Narrow: Linear's way, the quieter columns go first. */
+@container (max-width: 820px) {
+  .tk-row > .tk-chip,
+  .tk-row__commit {
+    display: none;
+  }
+
+  .tk-row__assignee {
+    width: 140px;
+  }
+}
+
+@container (max-width: 600px) {
+  .tk-row {
+    gap: 8px;
+  }
+
+  .tk-row__date,
+  .tk-row__assignee span {
+    display: none;
+  }
+
+  .tk-row__assignee {
+    width: auto;
+  }
+
+  .tk-row__id {
+    width: 84px;
+  }
+}
+
+@media (max-width: 720px) {
+  .tickets__head,
+  .ticket__head,
+  .tickets__filters,
+  .tickets__keys {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .tk-row {
+    padding: 0 16px;
+  }
+
+  .ticket__main {
+    padding: 24px 16px;
+  }
+
+  .ticket__props {
+    max-width: none;
+    border-top: 1px solid rgb(11 11 11 / 8%);
+    border-left: 0;
+  }
+}
+
+/* ── one flow: a Lambda across its whole life ──────────────────────────────
+   The sidebar's Lambda rows (Needs you, Planning, Queued, Building, Shipped),
+   the computers line at its foot, a Lambda's page past planning (phase
+   strip, one thread, its phase's rail and player bar), and caught up. */
+.side-section__count {
+  margin-left: 4px;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.side-section__count--badge {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--black);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.side-group + .side-group {
+  margin-top: 4px;
+}
+
+.side-group__name {
+  margin: 4px 10px 2px 32px;
+  color: var(--grey-500);
+  font-size: 11.5px;
+}
+
+.side-row--lambda {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.side-row--lambda .side-row__label {
+  white-space: normal;
+}
+
+.side-row--lambda .side-row__label,
+.side-row--lambda .side-row__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-row--lambda .side-row__sub {
+  color: var(--grey-500);
+  font-size: 12.5px;
+  opacity: 1;
+}
+
+.side-row--lambda .side-row__dot {
+  width: 8px;
+  height: 8px;
+  margin: 6px 0 0;
+}
+
+.side-row__dot--needs {
+  background: var(--black);
+}
+
+.side-row--lambda .side-row__sub--urgent {
+  color: var(--danger);
+}
+
+.side-row__ring,
+.side-row__shipped {
+  flex: none;
+  margin-top: 4px;
+}
+
+.side-row__shipped {
+  color: var(--shipped);
+}
+
+.side-row--lambda .side-row__when {
+  align-self: center;
+  font-size: 12.5px;
+}
+
+.side-row--epic {
+  align-items: center;
+  color: var(--black);
+}
+
+.side-row__caret {
+  display: grid;
+  flex: none;
+  width: 9px;
+  color: var(--grey-500);
+}
+
+.side-row__caret .side-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.side-chip {
+  padding: 0 7px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 12%);
+  color: var(--grey-800);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.side-row--child {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 5px 10px 5px 30px;
+}
+
+.side-row--child .side-row__dot {
+  width: 7px;
+  height: 7px;
+  margin: 6px 0 0;
+}
+
+.side-row--child .side-row__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-row--child .side-row__sub {
+  color: var(--grey-500);
+  font-size: 12.5px;
+  opacity: 1;
+}
+
+/* The computers line: one line however many, opening a popover. */
+.computers {
+  position: relative;
+  flex: none;
+}
+
+.computers__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 6px 0 4px;
+  padding: 8px 10px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--grey-800);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.computers__line:hover,
+.computers__line--open {
+  background: var(--sidebar-hover);
+}
+
+.computers__counts {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.computers__count--paused {
+  color: #9a5b0b;
+}
+
+.computers__count--offline {
+  color: var(--grey-500);
+}
+
+.computers__popover {
+  position: fixed;
+  z-index: 40;
+  box-sizing: border-box;
+  width: 420px;
+  max-height: min(70vh, 640px);
+  padding: 6px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border), 0 12px 36px rgb(0 0 0 / 14%);
+  color: var(--black);
+  font-size: 13.5px;
+}
+
+.computers__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+
+.computers__top strong {
+  flex: 1;
+  font-weight: 600;
+}
+
+.computers__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 12%);
+  color: var(--grey-500);
+}
+
+.computers__search input {
+  width: 90px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.computers__head {
+  margin: 10px 10px 4px;
+  color: var(--grey-500);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.computers__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.computers__group--attention .computers__row:has(.computers__dot--paused) {
+  background: var(--amber-tint);
+}
+
+.computers__dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c9c7c1;
+}
+
+.computers__dot--building,
+.computers__dot--testing,
+.computers__dot--shipping {
+  background: var(--success);
+}
+
+.computers__dot--blocked {
+  background: var(--danger);
+}
+
+.computers__dot--paused {
+  background: #9a5b0b;
+}
+
+.computers__dot--offline {
+  border: 1.5px dashed var(--grey-500);
+  background: transparent;
+}
+
+.computers__name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.computers__name:disabled {
+  cursor: default;
+}
+
+.computers__detail {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--grey-500);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.computers__group--attention
+  .computers__row:has(.computers__dot--paused)
+  .computers__detail {
+  color: var(--amber-ink);
+}
+
+.computers__act {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.computers__act--quiet {
+  color: var(--grey-500);
+  font-weight: 400;
+  opacity: 0;
+}
+
+.computers__row:hover .computers__act--quiet {
+  opacity: 1;
+}
+
+.computers__more {
+  margin: 0 0 4px 28px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--grey-500);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.computers__foot {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.computers__button {
+  padding: 5px 10px;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.computers__button:disabled {
+  color: var(--grey-500);
+  cursor: default;
+}
+
+.computers__spacer {
+  flex: 1;
+}
+
+.computers__link {
+  align-self: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* The phase strip, under a Lambda's header in every phase. */
+.lambda-page__strip {
+  margin: 0 calc(-1 * var(--main-pad, 24px));
+  padding: 10px var(--main-pad, 24px);
+  border-bottom: 1px solid rgb(11 11 11 / 6%);
+}
+
+.phase-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.phase-strip__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.phase-strip__line {
+  width: 22px;
+  height: 1px;
+  background: rgb(11 11 11 / 15%);
+}
+
+.phase-strip__line--done {
+  background: var(--black);
+}
+
+.phase-strip__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 12%);
+  color: var(--grey-500);
+}
+
+.phase-strip__dot {
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #b9b7b1;
+  border-radius: 50%;
+}
+
+.phase-strip__step--done {
+  color: var(--black);
+}
+
+.phase-strip__step--done .phase-strip__dot {
+  border: 0;
+  background: var(--black);
+}
+
+.phase-strip__step--current {
+  background: var(--black);
+  box-shadow: 0 0 0 1px var(--black);
+  color: #fff;
+  font-weight: 600;
+}
+
+.phase-strip__step--current .phase-strip__dot {
+  border: 0;
+  background: #fff;
+}
+
+/* A Lambda's page: the header, one thread, its phase's rail. */
+.lambda-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.lambda-page .toolbar__title {
+  max-width: none;
+}
+
+.lambda-page__where {
+  margin-left: 8px;
+  color: var(--grey-500);
+  font-weight: 400;
+}
+
+.lambda-page .toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lambda-page__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid rgb(11 11 11 / 15%);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--black);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lambda-page__button:hover {
+  background: var(--grey-50);
+}
+
+.lambda-page__menu {
+  position: relative;
+}
+
+.lambda-page__more {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--black);
+  cursor: pointer;
+}
+
+.lambda-page__more:hover {
+  background: var(--grey-50);
+}
+
+.lambda-page__menu-list.context-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: auto;
+  min-width: 200px;
+}
+
+.lambda-thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 calc(-1 * var(--main-pad, 24px));
+}
+
+.lambda-thread__log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 24px max(24px, calc((100% - 690px) / 2));
+  overflow-y: auto;
+}
+
+.lambda-thread__log .msg {
+  margin: 0;
+}
+
+.lambda-thread__fold {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--grey-50);
+  color: var(--grey-800);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lambda-thread__fold svg {
+  transition: transform 0.15s;
+}
+
+.lambda-thread__fold .lambda-thread__caret--open {
+  transform: rotate(90deg);
+}
+
+.lambda-thread__folded {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--grey-100);
+}
+
+.lambda-thread__divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.lambda-thread__divider::before,
+.lambda-thread__divider::after {
+  flex: 1;
+  height: 1px;
+  background: rgb(11 11 11 / 10%);
+  content: '';
+}
+
+.lambda-thread__activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lambda-thread__line {
+  display: flex;
+  gap: 10px;
+  color: var(--grey-800);
+  font-size: 13.5px;
+}
+
+.lambda-thread__line > span:first-child {
+  color: var(--grey-500);
+}
+
+.lambda-thread__line strong {
+  color: var(--black);
+  font-weight: 500;
+}
+
+.lambda-thread__said {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.55;
+}
+
+.lambda-thread__said p {
+  margin: 0;
+}
+
+.lambda-thread__who {
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.lambda-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--ring), var(--lift);
+}
+
+.lambda-card strong {
+  font-size: 15px;
+}
+
+.lambda-card--blocked {
+  gap: 12px;
+  box-shadow: 0 0 0 1.5px var(--danger), var(--lift);
+}
+
+.lambda-card__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lambda-card__badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lambda-card__body {
+  line-height: 1.55;
+}
+
+.lambda-card__body p {
+  margin: 0 0 8px;
+}
+
+.lambda-card__from {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.lambda-card__answer {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 12%);
+  font: inherit;
+  resize: vertical;
+}
+
+.lambda-card__answer:focus {
+  outline: 0;
+  box-shadow: 0 0 0 1.5px var(--black);
+}
+
+.lambda-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lambda-compose {
+  flex: none;
+  padding: 8px max(24px, calc((100% - 690px) / 2)) 16px;
+}
+
+.lambda-compose label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 12%);
+}
+
+.lambda-compose label:focus-within {
+  box-shadow: 0 0 0 1.5px var(--black);
+}
+
+.lambda-compose__to {
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.lambda-compose textarea {
+  min-height: 40px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  resize: none;
+  field-sizing: content;
+}
+
+/* Its phase's rail. */
+.lambda-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 24px;
+}
+
+.lambda-rail__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.lambda-rail__read {
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--grey-500);
+  cursor: pointer;
+}
+
+.lambda-rail__read:hover {
+  color: var(--black);
+}
+
+.lambda-rail__text {
+  margin: 0;
+  color: #1d1d1b;
+  line-height: 1.55;
+}
+
+.lambda-rail__text p {
+  margin: 0 0 8px;
+}
+
+.lambda-rail__muted {
+  color: var(--grey-500);
+  font-size: 13px;
+}
+
+.lambda-rail__place {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--white);
+  box-shadow: var(--ring);
+}
+
+.lambda-rail__big {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.lambda-rail__place .lambda-rail__muted {
+  margin-top: 2px;
+  color: var(--grey-800);
+  font-size: 14px;
+}
+
+.lambda-rail__row,
+.lambda-rail__ticket {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lambda-rail__row--this {
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--grey-100);
+  font-weight: 500;
+}
+
+.lambda-rail__grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lambda-rail__note {
+  flex: none;
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.lambda-rail__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lambda-rail__ticket {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lambda-rail__ticket:hover,
+.lambda-rail__ticket--on {
+  background: var(--grey-100);
+}
+
+.lambda-rail .link-button {
+  align-self: flex-start;
+  font-size: 13px;
+}
+
+.lambda-rail__checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+}
+
+.lambda-rail__send-back {
+  align-self: flex-start;
+}
+
+.lambda-rail__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lambda-rail__fact {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--white);
+  box-shadow: var(--ring);
+}
+
+.lambda-rail__fact > span:first-child {
+  color: var(--grey-500);
+  font-size: 12px;
+}
+
+.lambda-rail__file {
+  display: flex;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.lambda-rail__added {
+  color: var(--success);
+}
+
+.lambda-rail__removed {
+  color: var(--danger);
+}
+
+.lambda-rail__chips {
+  display: flex;
+  gap: 6px;
+}
+
+.lambda-rail__chip {
+  padding: 4px 10px;
+  border: 1px solid rgb(11 11 11 / 12%);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.lambda-rail__chip--on {
+  border-color: var(--black);
+  background: var(--black);
+  color: #fff;
+}
+
+.lambda-rail__group {
+  margin: 8px 0 0;
+  color: var(--grey-500);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.lambda-rail__shots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* The player bar: read aloud, and the phase's main action. */
+.lambda-player.rail__actions {
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 12px 18px 12px 24px;
+  background: var(--white);
+}
+
+.lambda-player__skip,
+.lambda-player__play,
+.lambda-player__speed {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  cursor: pointer;
+}
+
+.lambda-player__skip {
+  width: 28px;
+  height: 28px;
+}
+
+.lambda-player__play {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--black);
+  color: #fff;
+}
+
+.lambda-player__speed {
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.lambda-player__spacer {
+  flex: 1;
+}
+
+/* All caught up: where things stand, and only what they could do. */
+.caught-up {
+  box-sizing: border-box;
+  gap: 22px;
+  width: 100%;
+  max-width: 620px;
+  padding: 48px 24px;
+}
+
+.caught-up__top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.caught-up__top .lambda-mark {
+  margin-bottom: 4px;
+}
+
+.caught-up__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 34px;
+  font-weight: 400;
+}
+
+.caught-up__line {
+  margin: 0;
+  color: var(--grey-800);
+}
+
+.launch {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--ring), var(--lift);
+}
+
+.launch__head {
+  margin: 0;
+  padding: 14px 18px 8px;
+  color: var(--grey-500);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.launch__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid rgb(11 11 11 / 6%);
+}
+
+.launch__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.launch__sub {
+  display: block;
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.launch__button {
+  padding: 6px 14px;
+  border: 1px solid rgb(11 11 11 / 15%);
+  border-radius: 7px;
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.launch__offline {
+  box-sizing: border-box;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0 2px;
+  border: 1.5px dashed var(--grey-500);
+  border-radius: 50%;
+}
+
+.caught-up__note {
+  margin: 0;
+  color: var(--grey-500);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.lambda-card__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lambda-card__choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 12%);
+  cursor: pointer;
+}
+
+.lambda-card__choice:has(:checked) {
+  box-shadow: 0 0 0 1.5px var(--black);
+}
+
+.lambda-card__rec {
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.lambda-card__body {
+  margin: 0;
+}
+
+/* Wins over the Plan rail's stacked footer. */
+.lambda-player.rail__actions {
+  display: flex;
+  flex-direction: row;
+  min-height: 62px;
+}
+
+.lambda-page .toolbar__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lambda-rail .link-button {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.lambda-rail .link-button:hover {
+  text-decoration: underline;
+}
+
+/* The sidebar's section heads, as small caps: Needs you's in ink with its
+   badge at the end, the rest quiet with a count ("QUEUED · 4"). */
+.side-section__title {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.side-section--needs-you .side-section__title {
+  color: var(--black);
+  font-weight: 600;
+}
+
+.side-section__head .side-section__count--badge {
+  margin-right: 6px;
+  margin-left: auto;
+}
+
+.side-section__hint {
+  margin-left: 4px;
+  color: var(--grey-500);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.side-more {
+  margin: 0 0 4px 34px;
+  padding: 2px 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--grey-500);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* A planning row: its state mark first, a word for it at the end. */
+.side-row__lead {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 12px;
+}
+
+.side-row__lead .count {
+  display: none;
+}
+
+.side-row__state {
+  font-size: 12.5px;
+}
+
+.side-section__title .side-section__count {
+  margin-left: 0;
+}
+
+/* A ticket and its Lambda: Chat with Lambda, the block or the planning it's
+   in, and what to do with a reply. */
+.tk-chat-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--black);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ticket__notice--blocked {
+  background: #f8ecec;
+  color: var(--danger);
+}
+
+.ticket__notice-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.ticket__notice--planning {
+  background: var(--grey-50);
+  color: var(--grey-800);
+}
+
+.ticket__notice--planning strong {
+  color: var(--black);
+  font-weight: 500;
+}
+
+.ticket__notice-text {
+  flex: 1;
+}
+
+.ticket__notice .link-button {
+  color: var(--link);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.ticket__queued {
+  margin: -6px 0 0;
+  font-size: 12px;
+  text-align: right;
+}
+
+.ticket__reply-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+.ticket__comment-foot .link-button {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.ticket__blocked-word {
+  color: var(--danger);
+}
+
+/* The ticket a new chat is about, attached in the box. */
+.new-chat__about {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  margin: 2px 0 4px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 7px;
+  background: var(--grey-100);
+  font-size: 13px;
+}
+
+.new-chat__about .new-chat__suggestion-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.new-chat__about-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-chat__about-remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--grey-500);
+  font: inherit;
+  cursor: pointer;
+}
+
+.new-chat__about-remove:hover {
+  background: var(--grey-300);
+  color: var(--black);
+}
+
+/* With a ticket attached the box is tall: the chip on its own row first. */
+.new-chat__box--about {
+  grid-template-areas:
+    'about about about'
+    'text text text'
+    'tray tray tray'
+    'plus . send';
+}
+
+.new-chat__box .new-chat__about {
+  grid-area: about;
+  justify-self: start;
+}
+
+/* ── chat readability ──────────────────────────────────────────────────────
+   The chats read like ChatGPT's: 16px text on 28px lines, room between
+   paragraphs and list items, a 768px column. The planning chat, a
+   computer's chat and a Lambda's page alike; rails and the sidebar keep
+   their denser 14px. */
+.center-chat,
+.lambda-thread {
+  --chat-gutter: max(24px, calc((100% - 768px) / 2));
+}
+
+.lambda-thread__log,
+.lambda-compose {
+  padding-right: var(--chat-gutter);
+  padding-left: var(--chat-gutter);
+}
+
+.center-chat .chat-panel__log .msg,
+.lambda-thread__log .msg,
+.lambda-thread__said,
+.center-chat .build-bubble,
+.lambda-thread__log .build-bubble {
+  font-size: 16px;
+  line-height: 28px;
+}
+
+.center-chat .chat-panel__log .msg {
+  margin: 24px 0;
+}
+
+.lambda-thread__log {
+  gap: 24px;
+}
+
+.center-chat .md p,
+.center-chat .md ul,
+.center-chat .md ol,
+.center-chat .md pre,
+.center-chat .md table,
+.center-chat .md blockquote,
+.lambda-thread .md p,
+.lambda-thread .md ul,
+.lambda-thread .md ol,
+.lambda-thread .md pre,
+.lambda-thread .md table,
+.lambda-thread .md blockquote {
+  margin: 0 0 18px;
+}
+
+.center-chat .md li,
+.lambda-thread .md li {
+  margin: 6px 0;
+}
+
+.center-chat .md h1,
+.center-chat .md h2,
+.center-chat .md h3,
+.center-chat .md h4,
+.lambda-thread .md h1,
+.lambda-thread .md h2,
+.lambda-thread .md h3,
+.lambda-thread .md h4 {
+  margin: 28px 0 10px;
+  font-size: 18px;
+  line-height: 28px;
+}
+
+.center-chat .md code,
+.lambda-thread .md code {
+  font-size: 14px;
+}
+
+/* Your messages: a softer, rounder bubble at the same size. */
+.center-chat .chat-panel__log .msg--you,
+.lambda-thread__log .msg--you {
+  padding: 10px 18px;
+  border-radius: 20px;
+}
+
+.center-chat .chat-panel__compose textarea,
+.lambda-compose textarea {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.lambda-thread__line,
+.lambda-thread__who,
+.lambda-compose__to {
+  font-size: 13.5px;
+}
+
+/* The last block of a message ends it: no space under its last line. */
+.center-chat .md > :last-child,
+.lambda-thread .md > :last-child {
+  margin-bottom: 0;
+}
+
+/* Yours on the right, as in every chat. */
+.lambda-thread__log .msg--you {
+  align-self: flex-end;
+}
+
+/* The ticket a chat or Lambda is about, by the title: back to its page. */
+.toolbar__ticket {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--grey-100);
+  color: var(--grey-800);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.toolbar__ticket:hover {
+  background: var(--grey-300);
+  color: var(--black);
+}
+
+.lambda-rail__ticket--about {
+  margin: 0 -8px;
+}
+
+.center-chat .chat-panel__log .msg--you {
+  margin-left: auto;
+}
+
+/* The tracker's own state, where it says more than Lambda's ("In review"). */
+.tk-row__status {
+  display: inline-flex;
+  flex: none;
+}
+
+.tk-chip--state {
+  color: var(--grey-800);
+  background: var(--grey-50);
+}
+
+/* Settings → Computers: who each computer is in its trackers. */
+.account-list__trackers {
+  display: block;
+  margin-top: 2px;
+  color: var(--grey-500);
+  font-size: 12.5px;
+}
+
+.account-list__warning {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--amber-tint);
+  color: var(--amber-ink);
+}
+
+.account-list__row:has(.account-list__trackers) {
+  flex-wrap: wrap;
+}
+
+.account-list__row .account-list__trackers {
+  flex-basis: 100%;
+}
+
+/* An epic's name beside a row: never more room than the ticket's own title. */
+.tk-chip--epic {
+  flex: 0 1 auto;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The title keeps its room: labels and the epic give way first, each cut
+   short rather than pushing the title out. */
+.tk-row .tk-row__title {
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+
+.tk-row .tk-chip--label,
+.tk-row .tk-chip--epic {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-row .tk-chip--epic {
+  max-width: 160px;
+}
+
+.tk-row .tk-chip__dot {
+  flex: none;
+}
+
+/* ── Projects, views and favorites (laid out as Linear's) ─────────────── */
+
+.project-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  line-height: 1;
+}
+
+.side-row__favicon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.star-button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--grey-500);
+}
+
+.star-button:hover {
+  background: var(--grey-100);
+  color: var(--black);
+}
+
+.star-button--on,
+.star-button--on:hover {
+  color: var(--amber);
+}
+
+.tk-icon-button--on {
+  background: var(--grey-100);
+}
+
+.tk-button--danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--white);
+}
+
+/* A view's or project's page: the list, then its panel on the right. */
+.tickets-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 100%;
+}
+
+.tickets-wrap > .tickets {
+  min-width: 0;
+}
+
+.tickets__crumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #6f6d68;
+  font-weight: 400;
+}
+
+.tickets__crumb-here {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  color: var(--black);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tickets__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.tk-chip--project {
+  flex: 0 1 auto;
+  max-width: 180px;
+}
+
+.tk-chip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-panel {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 320px;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 20px 20px 28px;
+  border-left: 1px solid rgb(11 11 11 / 8%);
+  font-size: 13px;
+}
+
+.view-panel__name,
+.view-panel__description {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 6px;
+  outline: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  resize: none;
+}
+
+.view-panel__name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.view-panel__description {
+  color: #6f6d68;
+}
+
+.view-panel__name:hover,
+.view-panel__description:hover,
+.view-panel__name:focus,
+.view-panel__description:focus {
+  background: var(--grey-50);
+}
+
+.view-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.view-panel__title h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.view-panel__text {
+  margin: 0;
+  color: #6f6d68;
+  line-height: 1.5;
+}
+
+.view-panel__props {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px 8px;
+  align-items: center;
+  margin: 6px 0 4px;
+}
+
+.view-panel__props dt {
+  color: #6f6d68;
+}
+
+.view-panel__props dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.view-panel__owner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-panel__avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--grey-300);
+  color: var(--black);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.view-panel__avatar--none {
+  border: 1px dashed var(--grey-500);
+  background: transparent;
+}
+
+.view-panel__breakdown {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgb(11 11 11 / 8%);
+}
+
+.view-panel__tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--grey-100);
+}
+
+.view-panel__tab {
+  flex: 1;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #6f6d68;
+  font: inherit;
+  font-size: 12px;
+}
+
+.view-panel__tab--on {
+  background: var(--surface);
+  color: var(--black);
+  box-shadow: var(--ring);
+}
+
+.view-panel__counts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view-panel__count {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 56px 24px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.view-panel__count-icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+.view-panel__count-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-panel__count-number {
+  color: #6f6d68;
+  text-align: right;
+}
+
+.view-panel__bar {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--grey-100);
+}
+
+.view-panel__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--grey-500);
+}
+
+.view-panel__progress {
+  gap: 8px;
+}
+
+.view-panel__progress .view-panel__bar {
+  width: 80px;
+}
+
+.view-panel__progress .view-panel__bar > span {
+  background: var(--success);
+}
+
+.view-panel__none {
+  margin: 4px 0;
+}
+
+.view-panel__link {
+  color: var(--link);
+}
+
+.view-panel__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.view-panel__delete {
+  color: var(--danger);
+}
+
+/* Projects: one table, as Linear's. */
+.projects-table {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.projects-table__head,
+.projects-table__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 110px 120px 32px;
+  gap: 12px;
+  align-items: center;
+  padding: 0 28px;
+}
+
+.projects-table__head:has(> :nth-child(6)),
+.projects-table__row--several {
+  grid-template-columns: minmax(0, 1fr) 140px 140px 110px 120px 32px;
+}
+
+.projects-table__head {
+  height: 34px;
+  border-bottom: 1px solid rgb(11 11 11 / 8%);
+  color: #6f6d68;
+  font-size: 12px;
+}
+
+.projects-table__row {
+  height: 44px;
+  border-bottom: 1px solid rgb(11 11 11 / 5%);
+}
+
+.projects-table__row:hover {
+  background: var(--grey-50);
+}
+
+.projects-table__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+}
+
+.projects-table__name > span:last-child,
+.projects-table__cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-table__status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.projects-table__star .star-button {
+  opacity: 0;
+}
+
+.projects-table__row:hover .star-button,
+.projects-table__star .star-button--on,
+.projects-table__star .star-button:focus-visible {
+  opacity: 1;
+}
+
+/* Views: a list of every saved view. */
+.views-list {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.views-list__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 28px;
+  border-bottom: 1px solid rgb(11 11 11 / 5%);
+}
+
+.views-list__row:hover {
+  background: var(--grey-50);
+}
+
+.views-list__open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  text-align: left;
+}
+
+.views-list__name {
+  flex: none;
+  font-weight: 500;
+}
+
+.views-list__description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.views-list__visibility {
+  flex: none;
+  font-size: 12px;
+}
+
+.views-list__row .star-button {
+  opacity: 0;
+}
+
+.views-list__row:hover .star-button,
+.views-list__row .star-button--on,
+.views-list__row .star-button:focus-visible {
+  opacity: 1;
+}
+
+.views-page__imported {
+  position: relative;
+  margin: 12px 28px 4px;
+  padding: 10px 40px 10px 14px;
+  border-radius: 8px;
+  background: var(--grey-50);
+  box-shadow: var(--ring);
+  font-size: 13px;
+}
+
+.views-page__imported p {
+  margin: 0 0 4px;
+}
+
+.views-page__imported ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.views-page__dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.tk-dialog--small {
+  width: min(480px, 100%);
+}
+
+@media (max-width: 900px) {
+  .tickets-wrap--aside {
+    flex-direction: column;
+  }
+
+  .view-panel {
+    position: static;
+    width: 100%;
+    max-height: none;
+    border-top: 1px solid rgb(11 11 11 / 8%);
+    border-left: 0;
+  }
+
+  .projects-table__head,
+  .projects-table__row,
+  .projects-table__row--several,
+  .projects-table__head:has(> :nth-child(6)) {
+    grid-template-columns: minmax(0, 1fr) 90px 32px;
+    padding: 0 16px;
+  }
+
+  .projects-table__head > :nth-child(n + 2):not(:nth-last-child(-n + 2)),
+  .projects-table__row > :nth-child(n + 2):not(:nth-last-child(-n + 2)) {
+    display: none;
+  }
+
+  .views-list__row {
+    padding: 0 16px;
+  }
+
+  .views-list__visibility {
+    display: none;
+  }
+}
+
+/* Setup's "is this login you?", under Connected as. */
+.setup__who {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

@@ -4,16 +4,15 @@
  * First call (peek): Returns after ~1s with current output. Creates receipt.
  * Second call (same args): Blocks until pattern/idle/exit. Deletes receipt.
  */
-import { execSync } from "child_process";
-import { createHash } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
+import chalk from 'chalk';
+import { execSync } from 'child_process';
+import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
-import { RECEIPT_DIR } from "../../config";
-import { getPaneStatusTag, isShellIdle } from "../tmux/pane-status";
+import { getPaneStatusTag, isShellIdle } from '../tmux/pane-status';
 
-import chalk from "chalk";
-
+export const RECEIPT_DIR = '/tmp/lambda-wait-receipts';
 const RECEIPT_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
 const POLL_INTERVAL_MS = 1000;
 
@@ -24,14 +23,14 @@ function ensureReceiptDir(): void {
 }
 
 function receiptKey(pattern: string | undefined, pane: string): string {
-  const data = `${pattern ?? ""}:${pane}`;
-  const hash = createHash("md5").update(data).digest("hex");
+  const data = `${pattern ?? ''}:${pane}`;
+  const hash = createHash('md5').update(data).digest('hex');
 
   return `${paneHash(pane)}_${hash}`;
 }
 
 function paneHash(pane: string): string {
-  return createHash("md5").update(pane).digest("hex").slice(0, 8);
+  return createHash('md5').update(pane).digest('hex').slice(0, 8);
 }
 
 function receiptPath(key: string): string {
@@ -129,23 +128,23 @@ export function clearReceiptsForPane(pane: string): void {
   const prefix = paneHash(pane);
   const files = fs.readdirSync(RECEIPT_DIR);
 
-  files.forEach((file) => {
-    if (file.startsWith(prefix) && file.endsWith(".receipt")) {
+  for (const file of files) {
+    if (file.startsWith(prefix) && file.endsWith('.receipt')) {
       fs.unlinkSync(path.join(RECEIPT_DIR, file));
     }
-  });
+  }
 }
 
 export function capturePaneOutput(pane: string): string {
   try {
     return execSync(`tmux capture-pane -t "${pane}" -p`, {
-      encoding: "utf-8",
+      encoding: 'utf-8',
       timeout: 5000,
     }).trimEnd();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
 
-    if (msg.includes("can't find") || msg.includes("no such")) {
+    if (msg.includes("can't find") || msg.includes('no such')) {
       console.error(chalk.red(`Error: Pane "${pane}" not found.`));
       listAvailablePanes();
       process.exit(1);
@@ -159,13 +158,13 @@ function listAvailablePanes(): void {
   try {
     const panes = execSync(
       'tmux list-panes -a -F "#{session_name}:#{window_name}.#{pane_index}"',
-      { encoding: "utf-8", timeout: 5000 },
+      { encoding: 'utf-8', timeout: 5000 }
     ).trim();
-    console.error(chalk.yellow("\nAvailable panes:"));
+    console.error(chalk.yellow('\nAvailable panes:'));
 
-    panes.split("\n").forEach((p) => {
+    for (const p of panes.split('\n')) {
       console.error(`  ${p}`);
-    });
+    }
   } catch {
     // tmux not running — nothing to list
   }
@@ -173,23 +172,23 @@ function listAvailablePanes(): void {
 
 function cleanPattern(raw: string): string {
   // Remove backslash-escaped pipes — common mistake from shell escaping
-  return raw.replace(/\\\|/g, "|");
+  return raw.replace(/\\\|/g, '|');
 }
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function tailLines(output: string, n: number): string {
-  const lines = output.split("\n");
+  const lines = output.split('\n');
 
-  return lines.slice(-n).join("\n");
+  return lines.slice(-n).join('\n');
 }
 
 async function runPeek(
   pane: string,
   lines: number,
-  key: string,
+  key: string
 ): Promise<void> {
   // Brief delay to capture fresh output
   await sleep(1000);
@@ -197,7 +196,7 @@ async function runPeek(
   createReceipt(key);
   const status = getPaneStatusTag(pane);
   console.log(
-    `=== PEEK (${new Date().toLocaleTimeString()}) ${status} — Run same command again to block until done ===`,
+    `=== PEEK (${new Date().toLocaleTimeString()}) ${status} — Run same command again to block until done ===`
   );
   console.log(tailLines(output, lines));
 }
@@ -223,18 +222,21 @@ async function runWait(
   timeoutSec: number,
   idleSec: number,
   lines: number,
-  key: string,
+  key: string
 ): Promise<void> {
   const regex = buildRegex(pattern);
 
-  // eslint-disable-next-line no-restricted-syntax -- reassigned in poll loop
-  let elapsed = 0;
-  // eslint-disable-next-line no-restricted-syntax -- reassigned in poll loop
-  let lastOutput = "";
-  // eslint-disable-next-line no-restricted-syntax -- reassigned in poll loop
-  let idleCount = 0;
+  // Each round carries the time spent so far, the last capture and how long
+  // it has stayed unchanged.
+  const poll = async (
+    elapsed: number,
+    lastOutput: string,
+    idleCount: number
+  ): Promise<void> => {
+    if (elapsed >= timeoutSec * 1000) {
+      return;
+    }
 
-  while (elapsed < timeoutSec * 1000) {
     const output = capturePaneOutput(pane);
 
     // Pattern match check
@@ -242,7 +244,7 @@ async function runWait(
       deleteReceipt(key);
 
       console.log(
-        `=== COMPLETED (found pattern at ${new Date().toLocaleTimeString()}) ===`,
+        `=== COMPLETED (found pattern at ${new Date().toLocaleTimeString()}) ===`
       );
       console.log(tailLines(output, lines));
       process.exit(0);
@@ -253,37 +255,36 @@ async function runWait(
       deleteReceipt(key);
 
       console.log(
-        `=== COMPLETED (command exited at ${new Date().toLocaleTimeString()}) ===`,
+        `=== COMPLETED (command exited at ${new Date().toLocaleTimeString()}) ===`
       );
       console.log(tailLines(output, lines));
       process.exit(0);
     }
 
     // Idle detection
-    if (output === lastOutput) {
-      idleCount += POLL_INTERVAL_MS;
+    const unchanged = output === lastOutput;
+    const idleNow = unchanged ? idleCount + POLL_INTERVAL_MS : 0;
 
-      if (idleCount >= idleSec * 1000) {
-        deleteReceipt(key);
-        console.log(
-          `=== IDLE (no new output for ${idleSec}s at ${new Date().toLocaleTimeString()}) ===`,
-        );
-        console.log(tailLines(output, lines));
-        process.exit(0);
-      }
-    } else {
-      idleCount = 0;
-      lastOutput = output;
+    if (unchanged && idleNow >= idleSec * 1000) {
+      deleteReceipt(key);
+      console.log(
+        `=== IDLE (no new output for ${idleSec}s at ${new Date().toLocaleTimeString()}) ===`
+      );
+      console.log(tailLines(output, lines));
+      process.exit(0);
     }
 
     await sleep(POLL_INTERVAL_MS);
-    elapsed += POLL_INTERVAL_MS;
-  }
+
+    return poll(elapsed + POLL_INTERVAL_MS, output, idleNow);
+  };
+
+  await poll(0, '', 0);
 
   // Timeout — keep receipt so next call blocks immediately instead of peeking
   createReceipt(key);
   console.log(
-    `=== STILL RUNNING (timeout at ${new Date().toLocaleTimeString()}) ===`,
+    `=== STILL RUNNING (timeout at ${new Date().toLocaleTimeString()}) ===`
   );
   const output = capturePaneOutput(pane);
   console.log(tailLines(output, lines));

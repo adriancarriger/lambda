@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-const path = require('path');
-const fs = require('fs');
+const { run } = require('../dist/cli.js');
 
-const cliPath = path.join(__dirname, '..', 'dist', 'cli.js');
-if (!fs.existsSync(cliPath)) {
-  console.error('Error: CLI not built yet. Run ./init.sh first.');
-  process.exit(1);
-}
+// Deviation: this calls run(), which builds the program with the exported
+// createProgram(), rather than calling createProgram() itself. The dispatch
+// has to see argv before commander parses it: an unknown command must reach
+// the project CLI with flags commander would otherwise reject or consume, and
+// a drop-in has to be loaded (asynchronously, through jiti or import()) and
+// registered before parsing, in place of the built-in it replaces.
 
-require(cliPath);
+run(process.argv).then((code) => {
+  process.exitCode = code;
+});

@@ -1,0 +1,8 @@
+{
+  "name": "lambda-desktop-kokoro",
+  "private": true,
+  "description": "Kokoro for the Mac app: installed by build:mac and carried beside app.asar, never part of the npm package.",
+  "dependencies": {
+    "kokoro-js": "1.2.1"
+  }
+}

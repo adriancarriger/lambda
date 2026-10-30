@@ -1,0 +1,64 @@
+# The Mac app: `npm run build:mac` (run from the
+# package folder). The app is the package itself: the CLI, the mothership,
+# the runner and the app's pages from dist/, plus the main process from
+# desktop/dist/. Signing and notarising happen only when the release job has
+# the Apple secrets; without them the same build is unsigned (ad-hoc, as
+# every arm64 build is) and still opens.
+appId: app.lambda.desktop
+productName: Lambda
+copyright: Lambda's authors
+directories:
+  output: desktop/release
+  buildResources: desktop/build
+extraMetadata:
+  main: desktop/dist/main.js
+files:
+  - package.json
+  - dist/**
+  - bin/**
+  - commands/**
+  - instructions/**
+  - templates/**
+  - tools/**
+  - src/building/permission-hook.cjs
+  - src/design/system/shims/**
+  - desktop/dist/**
+  - '!**/*.map'
+  - '!**/__tests__/**'
+asar: true
+# A forked process can't run from inside app.asar, and native modules can't
+# load from it: Kokoro's worker, the pty, SQLite and the package's tools.
+asarUnpack:
+  - dist/kokoroWorker.js
+  - node_modules/@lydell/node-pty/**
+  - node_modules/@lydell/node-pty-*/**
+  - node_modules/better-sqlite3/**
+  - tools/**
+extraResources:
+  # tmux and git, built by desktop/tools/fetch-tools.sh.
+  - from: desktop/tools/out
+    to: tools
+  # Kokoro and its model runtime, installed by build:mac into desktop/kokoro.
+  - from: desktop/kokoro/node_modules
+    to: kokoro/node_modules
+npmRebuild: true
+mac:
+  target:
+    # What people download.
+    - target: dmg
+      arch:
+        - arm64
+    # What electron-updater installs updates from (latest-mac.yml points here).
+    - target: zip
+      arch:
+        - arm64
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: desktop/build/entitlements.mac.plist
+  # Electron's helpers and the bundled tools: no unsigned executable memory.
+  entitlementsInherit: desktop/build/entitlements.mac.inherit.plist
+  # Turned on by the release job only when the Apple secrets exist.
+  notarize: false
+dmg:
+  title: Lambda

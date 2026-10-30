@@ -1,0 +1,181 @@
+name: Release
+
+# On every push to main: publish to npm and attach the Mac app to a GitHub
+# Release, but only when package.json's version isn't on npm yet. The `build`
+# job installs, tests and builds with no secrets beyond the packaging step's
+# Apple ones, and hands on only its artifacts. Both `build` and `publish` run
+# in the `release` environment, which waits for its reviewer's Approve: the
+# Apple secrets are `release` environment secrets, and GitHub gives those only
+# to jobs that name it. `publish` runs nothing from the repository: npm
+# trusted publishing (OIDC) is tied to this file and that environment, and
+# there is no npm token anywhere.
+#
+# So a release asks for two Approves, one after the other: `build`'s (for the
+# Apple secrets), then `publish`'s (for the id-token). That is deliberate. One
+# job would hand an id-token that can publish to npm to the install, test and
+# build steps, which run other people's code; approving only the first leaves
+# the app built and nothing published, and the run can be approved later.
+#
+# Actions are pinned to commits (the comment names the tag).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.check.outputs.publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Is this version on npm yet?
+        id: check
+        run: npx --yes jiti@2.6.1 scripts/shouldPublish.ts
+
+  build:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: read
+    outputs:
+      name: ${{ steps.pack.outputs.name }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      # Some tests start a real Chromium, and some a real tmux server.
+      - run: npx playwright install --with-deps chromium
+      - run: brew install tmux
+      - run: npm test
+
+      # What npm publishes is this tarball, exactly as tested.
+      - name: Pack the npm package
+        id: pack
+        run: |
+          TARBALL="$(npm pack --ignore-scripts | tail -n 1)"
+          echo "tarball=${TARBALL}" >> "${GITHUB_OUTPUT}"
+          echo "name=$(node -p "require('./package.json').name")" >> "${GITHUB_OUTPUT}"
+
+      # The Mac app builds before anything is published: once npm has a
+      # version it can't be published again, so a failed build after it
+      # would leave that version with no Release.
+      - run: npm run build:desktop
+      - run: bash desktop/tools/fetch-tools.sh
+      - run: npm ci --prefix desktop/kokoro --omit=dev --no-audit --no-fund
+      # Native modules rebuilt for Electron here, with no secrets: the
+      # packaging step then runs no install scripts and downloads nothing.
+      - run: PATH="${PWD}/node_modules/.bin:${PATH}" electron-builder install-app-deps --platform darwin --arch arm64
+
+      - name: Package the Mac app (signed and notarised only with the Apple secrets)
+        env:
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          SIGNING=()
+          if [ -n "${CSC_LINK}" ] && [ -n "${APPLE_API_KEY_BASE64}" ]; then
+            export APPLE_API_KEY="${RUNNER_TEMP}/apple-api-key.p8"
+            trap 'rm -f "${APPLE_API_KEY}"' EXIT
+            echo "${APPLE_API_KEY_BASE64}" | base64 --decode > "${APPLE_API_KEY}"
+            SIGNING=(-c.mac.notarize=true)
+          else
+            # package-mac.sh ad-hoc signs the bundle when CSC_LINK is unset.
+            echo "No Apple secrets: building without a Developer ID (ad-hoc signed)."
+            unset CSC_LINK CSC_KEY_PASSWORD
+          fi
+          PATH="${PWD}/node_modules/.bin:${PATH}" bash desktop/tools/package-mac.sh \
+            -c.npmRebuild=false \
+            -c.publish.provider=github \
+            -c.publish.owner="${OWNER}" \
+            -c.publish.repo="${REPO}" \
+            ${SIGNING[@]+"${SIGNING[@]}"}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-package
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-app
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.blockmap
+            desktop/release/latest-mac.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      NAME: ${{ needs.build.outputs.name }}
+      TARBALL: ${{ needs.build.outputs.tarball }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      SERVER_URL: ${{ github.server_url }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@^11.5.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: npm-package
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mac-app
+          path: mac-app
+
+      # A draft first: nobody (and no updater) sees it until npm has the
+      # version. Each step skips what a previous attempt already did, so a
+      # failed run can be rerun.
+      - name: Draft Release v${{ env.VERSION }} with the app and latest-mac.yml
+        run: |
+          if gh release view "v${VERSION}" > /dev/null 2>&1; then
+            gh release upload "v${VERSION}" mac-app/* --clobber
+            exit 0
+          fi
+          gh release create "v${VERSION}" --draft \
+            --target "${SHA}" \
+            --title "Lambda ${VERSION}" \
+            --notes "Install the Mac app: ${SERVER_URL}/${GH_REPO}#install-the-mac-app" \
+            mac-app/*
+
+      - name: Publish to npm
+        run: |
+          if [ -n "$(npm view "${NAME}@${VERSION}" version 2> /dev/null)" ]; then
+            echo "${NAME}@${VERSION} is on npm already."
+            exit 0
+          fi
+          npm publish "${TARBALL}" --provenance --access public --ignore-scripts
+
+      - name: Publish Release v${{ env.VERSION }}
+        run: gh release edit "v${VERSION}" --draft=false

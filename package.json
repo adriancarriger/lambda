@@ -1,53 +1,110 @@
 {
-  "name": "lambda-cli",
-  "version": "0.1.0",
-  "description": "Lambda CLI - Multi-agent development orchestration",
-  "main": "dist/cli.js",
-  "bin": {
-    "lambda": "./bin/lambda"
-  },
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "clean": "rm -rf dist",
-    "test": "npx playwright test",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "format": "prettier --write '**/*.{ts,tsx,js,jsx,json,css,md}'",
-    "typecheck": "tsc --noEmit"
-  },
-  "keywords": [
-    "lambda",
-    "cli",
-    "multi-agent",
-    "claude",
-    "ai",
-    "tmux",
-    "orchestration"
-  ],
-  "author": "Adrian Carriger",
+  "name": "@adriancarriger/lambda",
+  "version": "0.2.0",
+  "description": "Run a team of coding agents on your own project: planning pods, building pods and the commands they share.",
   "license": "MIT",
+  "author": "Adrian Carriger",
   "repository": {
     "type": "git",
-    "url": "https://github.com/adriancarriger/lambda.git"
+    "url": "git+https://github.com/adriancarriger/lambda.git"
   },
-  "homepage": "https://github.com/adriancarriger/lambda",
+  "homepage": "https://github.com/adriancarriger/lambda#readme",
   "bugs": {
     "url": "https://github.com/adriancarriger/lambda/issues"
   },
+  "bin": {
+    "lambda": "./bin/lambda"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "require": "./dist/cli.js"
+    }
+  },
+  "files": [
+    "bin",
+    "commands",
+    "dist",
+    "instructions",
+    "src/building/permission-hook.cjs",
+    "src/design/system/shims",
+    "templates",
+    "tools"
+  ],
+  "scripts": {
+    "build": "tsup && vite build",
+    "build:desktop": "tsup --config desktop/tsup.config.ts",
+    "build:mac": "npm run build && npm run build:desktop && bash desktop/tools/fetch-tools.sh && npm install --prefix desktop/kokoro --omit=dev --no-audit --no-fund && bash desktop/tools/package-mac.sh",
+    "lint": "eslint --cache --max-warnings 0 'src/**/*.{ts,tsx}' 'desktop/*.ts' 'scripts/**/*.ts'",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p desktop/tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
+    "test": "jest"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": [
+      "<rootDir>/src/jestSetup.ts"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ]
+  },
   "dependencies": {
+    "@lydell/node-pty": "^1.1.0",
+    "better-sqlite3": "^12.11.1",
     "chalk": "^4.1.2",
-    "commander": "^11.1.0"
+    "commander": "^11.1.0",
+    "electron-updater": "^6.8.9",
+    "esbuild": "0.25.4",
+    "jiti": "^2.6.1",
+    "playwright": "^1.59.0",
+    "ws": "^8.18.2",
+    "zod": "^3.25.76"
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty-darwin-arm64": "1.1.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
-    "@playwright/test": "^1.48.0",
-    "@types/node": "^20.10.0",
-    "eslint": "^9.39.2",
-    "prettier": "^3.4.0",
-    "tsx": "^4.6.0",
-    "typescript": "^5.8.3",
-    "typescript-eslint": "^8.55.0"
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.6.0",
+    "@tiptap/extension-bubble-menu": "3.31.4",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/extension-placeholder": "3.31.4",
+    "@tiptap/extension-table": "3.31.4",
+    "@tiptap/markdown": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.24",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/ws": "^8.18.2",
+    "@typescript-eslint/eslint-plugin": "^8.39.0",
+    "@typescript-eslint/parser": "^8.39.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "@xterm/xterm": "^5.5.0",
+    "electron": "44.9.3",
+    "electron-builder": "^26.15.3",
+    "eslint": "^8.57.1",
+    "jest": "^29.7.0",
+    "kokoro-js": "1.2.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "ts-jest": "^29.1.2",
+    "tsup": "^8.0.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.4.21",
+    "yaml": "^2.7.1"
   },
   "engines": {
     "node": ">=20"
